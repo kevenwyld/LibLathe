@@ -28,6 +28,32 @@ class BaseOP:
         self.leadout_angle = 315
         # TODO: implement invert_x to pass to segment_group().to_commands()
 
+    # The working window. Operations only move the tool inside it:
+    #   Z from z_end() (toward the chuck) to z_start() (toward the tailstock)
+    #   X from x_outer() (largest radius) to x_inner() (smallest radius)
+    # X is negative internally (the part profile is on the -X side).
+
+    def z_start(self):
+        """Z where the operation starts: the stock front plus start_offset."""
+        return self.stock.z_max + self.start_offset
+
+    def z_end(self):
+        """Z where the operation must stop: the stock end minus end_offset."""
+        return self.stock.z_min - self.end_offset
+
+    def x_outer(self):
+        """Largest radius (most negative X): the stock radius plus extra_dia / 2."""
+        return self.stock.x_min - self.extra_dia * 0.5
+
+    def x_inner(self):
+        """Smallest radius (least negative X): min_dia / 2."""
+        return 0 - self.min_dia * 0.5
+
+    def starts_in_stock(self):
+        """True when z_start() is behind the front of the stock, i.e. there is
+        uncut material in front of the window."""
+        return self.z_start() < self.stock.z_max - 1e-6
+
     def set_params(self, params):
         """Set operations parameters"""
 

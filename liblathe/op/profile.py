@@ -26,12 +26,48 @@ class ProfileOP(liblathe.op.base.BaseOP):
                 raise ValueError("Calculated profile path intersects part")
             # tool nose radius compensation (imaginary tip programming)
             segmentgroup = self.nose_compensate(segmentgroup)
+            # keep the whole nose inside the working window
+            segmentgroup = segmentgroup.clip_to_box(*self.clip_box())
+            if not segmentgroup.count():
+                f_pass += 1
+                continue
             # add lead in to the profile path
             self.add_leadin(segmentgroup)
             # add the segment group to the tool paths
             self.tool_paths.append(segmentgroup)
             # increment f_pass to the next pass
             f_pass += 1
+
+    def clip_box(self):
+        """
+        The box the tip path is clipped to: (x_min, x_max, z_min, z_max).
+
+        The path is the path of the imaginary tip; the nose circle spans one
+        nose diameter from the tip toward the tailstock (+Z) and away from
+        the axis. So clipping the tip keeps the whole nose behind z_end()
+        (the chuck side) and above x_inner() (the minimum diameter), and the
+        outer limit is shrunk by the nose diameter so the nose stays inside
+        x_outer(). At z_start() the nose may reach up to one nose diameter
+        past the limit: that keeps the edges of selected faces reachable, and
+        the path itself never gouges the part.
+
+        Only real limits clip. Beyond the stock front and outside the stock
+        diameter the path is in air, so those sides stay open unless the
+        window is set inside the stock; likewise the axis side stays open
+        unless a minimum diameter is set (a ball or point needs the tip to
+        reach past the axis).
+        """
+        inf = float("inf")
+        d = 2 * self.nose_radius()
+        x_min = self.x_outer() + d if self.x_outer() > self.stock.x_min + 1e-6 else -inf
+        x_max = self.x_inner() if self.min_dia > 0 else inf
+        z_min = self.z_end()
+        z_max = self.z_start() if self.starts_in_stock() else inf
+        return x_min, x_max, z_min, z_max
+
+    def nose_radius(self):
+        r = getattr(self.tool, "nose_radius", None) or 0
+        return r if self.nose_comp else 0
 
     def nose_compensate(self, segmentgroup):
         """
@@ -83,10 +119,17 @@ class ProfileOP(liblathe.op.base.BaseOP):
     def add_leadin(self, segmentgroup):
         # get the first segment of the segment group
         segment = segmentgroup.get_segments()[0]
-        # calculate the new z_pos with lead in
-        z_pos = segment.start.Z + self.clearance
-        # create the new start point
-        start_point = Point(segment.start.X, segment.start.Y, z_pos)
+        if self.starts_in_stock():
+            # the window starts inside the stock, with uncut material in
+            # front: approach radially from outside the stock instead of
+            # along Z through that material
+            x_pos = self.x_outer() - self.clearance
+            start_point = Point(x_pos, segment.start.Y, segment.start.Z)
+        else:
+            # calculate the new z_pos with lead in
+            z_pos = segment.start.Z + self.clearance
+            # create the new start point
+            start_point = Point(segment.start.X, segment.start.Y, z_pos)
         # use the segments start as the leadin end point
         end_point = segment.start
         # create the leadin segment

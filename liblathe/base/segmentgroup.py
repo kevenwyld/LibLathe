@@ -232,6 +232,31 @@ class SegmentGroup:
 
         return cmds
 
+    def clip_to_box(self, x_min, x_max, z_min, z_max, tol=1e-6):
+        """
+        Return a new SegmentGroup containing only the parts of this group's
+        segments that lie inside the box x_min <= X <= x_max, z_min <= Z <= z_max.
+        Lines and arcs are split where they cross the box edges; arcs keep
+        their centre and direction. The result may contain several
+        disconnected chains (see split_connected()).
+        """
+        out = SegmentGroup()
+        for seg in self.get_segments():
+            for piece in _clip_segment(seg, x_min, x_max, z_min, z_max, tol):
+                out.add_segment(piece)
+        return out
+
+    def split_connected(self):
+        """Split the group into a list of SegmentGroups of connected segments."""
+        groups = []
+        current = None
+        for seg in self.get_segments():
+            if current is None or not current.get_segments()[-1].end.is_same(seg.start):
+                current = SegmentGroup()
+                groups.append(current)
+            current.add_segment(seg)
+        return groups
+
     def offset_path(self, step_over):
         """Create an offset segmentgroup by the distance of step_over"""
         # TODO Sort Edges to ensure they're in order.
@@ -573,3 +598,104 @@ class SegmentGroup:
 
         path_profile = Part.makeCompound(part_edges)
         Part.show(path_profile, name)
+
+
+def _inside(x, z, x_min, x_max, z_min, z_max, tol):
+    return x_min - tol <= x <= x_max + tol and z_min - tol <= z <= z_max + tol
+
+
+def _clip_segment(seg, x_min, x_max, z_min, z_max, tol):
+    """Return the pieces of seg inside the box, in order, as new Segments."""
+    sx, sz, ex, ez = seg.start.X, seg.start.Z, seg.end.X, seg.end.Z
+
+    # zero-length segments carry no geometry; drop them
+    if seg.start.distance_to(seg.end) <= 1e-9:
+        return []
+
+    if seg.bulge == 0:
+        # Liang-Barsky on the parameter t in [0, 1]
+        t0, t1 = 0.0, 1.0
+        dx, dz = ex - sx, ez - sz
+        for p, q in ((-dx, sx - x_min), (dx, x_max - sx), (-dz, sz - z_min), (dz, z_max - sz)):
+            if abs(p) < 1e-15:
+                if q < -tol:
+                    return []
+                continue
+            r = q / p
+            if p < 0:
+                t0 = max(t0, r)
+            else:
+                t1 = min(t1, r)
+        if t1 - t0 <= 1e-12:
+            return []
+        if t0 <= 0 and t1 >= 1:
+            return [Segment(seg.start, seg.end)]
+        start = seg.start if t0 <= 0 else Point(sx + dx * t0, seg.start.Y, sz + dz * t0)
+        end = seg.end if t1 >= 1 else Point(sx + dx * t1, seg.start.Y, sz + dz * t1)
+        if start.distance_to(end) <= 1e-9:
+            return []
+        return [Segment(start, end)]
+
+    # arc: parametrise by angle a measured as atan2(dX, dZ) about the centre
+    c = seg.get_centre_point()
+    rad = seg.get_radius()
+    a0 = math.atan2(sx - c.X, sz - c.Z)
+    included = seg.get_angle()
+
+    def pt_at(a):
+        return (c.X + rad * math.sin(a), c.Z + rad * math.cos(a))
+
+    # choose the sweep direction that lands on the segment end
+    sweep = included
+    px, pz = pt_at(a0 - included)
+    qx, qz = pt_at(a0 + included)
+    if math.hypot(px - ex, pz - ez) < math.hypot(qx - ex, qz - ez):
+        sweep = -included
+
+    # parameters (0..1) where the arc crosses the box edges
+    ts = {0.0, 1.0}
+    crossings = []
+    for xb in (x_min, x_max):
+        v = (xb - c.X) / rad
+        if -1 <= v <= 1:
+            s_ = math.asin(v)
+            crossings += [s_, math.pi - s_]
+    for zb in (z_min, z_max):
+        v = (zb - c.Z) / rad
+        if -1 <= v <= 1:
+            c_ = math.acos(v)
+            crossings += [c_, -c_]
+    two_pi = 2 * math.pi
+    for a in crossings:
+        if sweep > 0:
+            delta = (a - a0) % two_pi
+        else:
+            delta = -((a0 - a) % two_pi)
+        t = delta / sweep
+        # ignore crossings within tol (as arc length) of the ends
+        t_tol = tol / (abs(sweep) * rad)
+        if t_tol < t < 1 - t_tol:
+            ts.add(t)
+
+    ts = sorted(ts)
+    pieces = []
+    for t_a, t_b in zip(ts[:-1], ts[1:]):
+        mx, mz = pt_at(a0 + sweep * (t_a + t_b) / 2)
+        if not _inside(mx, mz, x_min, x_max, z_min, z_max, tol):
+            continue
+        if t_a <= 0:
+            start = seg.start
+        else:
+            x, z = pt_at(a0 + sweep * t_a)
+            start = Point(x, seg.start.Y, z)
+        if t_b >= 1:
+            end = seg.end
+        else:
+            x, z = pt_at(a0 + sweep * t_b)
+            end = Point(x, seg.start.Y, z)
+        if start.distance_to(end) <= 1e-9:
+            continue
+        bulge = math.copysign(math.tan(abs(sweep) * (t_b - t_a) / 4), seg.bulge)
+        pieces.append(Segment(start, end, bulge))
+
+    return pieces

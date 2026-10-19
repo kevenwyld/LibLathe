@@ -17,8 +17,15 @@ class RoughOP(liblathe.op.base.BaseOP):
         roughing_segment_group = self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
         # self.part_segment_group.create_freecad_shape('roughing_segment_group')
         self.clearing_paths = []
-        z_max = self.stock.z_max + self.start_offset + self.clearance
-        z_min = z_max - self.stock.z_length() - self.start_offset - self.clearance
+        # passes run from the window start to the window end. When the window
+        # starts in front of the stock they start a clearance away, in air;
+        # when it starts inside the stock they start on the window edge and
+        # are entered radially (see below)
+        starts_in_stock = self.starts_in_stock()
+        z_start = self.z_start()
+        z_max = z_start if starts_in_stock else z_start + self.clearance
+        z_min = self.z_end()
+        x_inner = self.x_inner()
         # create roughing boundary offset by the stock to leave value
         # include a minimal offset to ensure the roughing passes don't intersect the part
         offset = 0.01 + self.stock_to_leave
@@ -31,9 +38,15 @@ class RoughOP(liblathe.op.base.BaseOP):
         x_pos = -1e-6
         # work from 0 to x_min creating roughing passes
         while x_pos > x_min:
-            # check if the roughing pass start is outside the stock
+            # skip passes below the minimum diameter
+            if x_pos > x_inner + 1e-9:
+                x_pos -= self.step_over
+                continue
+
+            # skip passes that would cut nothing: the boundary at this X is in
+            # front of the stock, or in front of the window start
             boundary_z = roughing_boundary.z_at_x(x_pos)
-            if boundary_z and round(boundary_z, 5) >= round(self.stock.z_max, 5):
+            if boundary_z and round(boundary_z, 5) >= round(min(self.stock.z_max, z_start), 5):
                 x_pos -= self.step_over
                 continue
 
@@ -108,6 +121,13 @@ class RoughOP(liblathe.op.base.BaseOP):
                                 path_line = Segment(startPt, endPt)
                                 segmentgroup.add_segment(path_line)
             
+            # entering inside the stock: feed in radially along the window
+            # edge from the previous (already cut) pass level
+            segs = segmentgroup.get_segments()
+            if starts_in_stock and segs and segs[0].start.is_same(pt1):
+                entry = Segment(Point(x_pos - self.step_over, 0, z_start), pt1)
+                segmentgroup.insert_segment(entry, 0)
+
             x_pos -= self.step_over
 
             if segmentgroup.count():
