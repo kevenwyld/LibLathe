@@ -6,6 +6,12 @@ from liblathe.base.point import Point
 from liblathe.base.segment import Segment
 
 
+
+# Tolerance (degrees) for angle comparisons in defeature(). Geometry from
+# FreeCAD carries floating-point noise (e.g. 269.99998 instead of 270), which
+# otherwise flips tangent/limit cases and silently drops profile features.
+ANGLE_TOL = 1e-3
+
 class SegmentGroup:
     """Container Group for segments"""
 
@@ -351,8 +357,8 @@ class SegmentGroup:
                 segAng = round(math.degrees(seg.get_angle()), 5)
                 # get angle tangent to the start point
                 startPtAng = round(pt1.angle_to(seg.get_centre_point()) - 90, 5)
-                if startPtAng >= tool.get_tool_cutting_angle():
-                    if startPtAng + segAng <= 270:
+                if startPtAng >= tool.get_tool_cutting_angle() - ANGLE_TOL:
+                    if startPtAng + segAng <= 270 + ANGLE_TOL:
                         segs_out.add_segment(seg)
                 else:
                     ang = tool.get_tool_cutting_angle()
@@ -372,7 +378,7 @@ class SegmentGroup:
                         remaining_seg.set_bulge(angle)
                         segs_out.add_segment(remaining_seg)
                     else:
-                        if seg.start.angle_to(seg.end) <= 180:
+                        if seg.start.angle_to(seg.end) <= 180 + ANGLE_TOL:
                             seg = Segment(pt1, pt2)
                             segs_out.add_segment(seg)
                         else:
@@ -382,7 +388,7 @@ class SegmentGroup:
             if seg.bulge < 0:
                 # Limit the arc movement to the X extents or the tangent at the max tool angle if allow_grooving
                 angle_limit = 270 if allow_grooving is False else tool.get_tool_cutting_angle() + 90
-                if seg.get_centre_point().angle_to(pt2) >= angle_limit:
+                if seg.get_centre_point().angle_to(pt2) >= angle_limit - ANGLE_TOL:
                     segs_out.add_segment(seg)
                 else:
                     rad = seg.get_radius()
@@ -406,7 +412,7 @@ class SegmentGroup:
                     next_index, pt = self.find_next_good_edge(index, stock_z_min, tool, allow_grooving, pt)
 
             elif seg.bulge == 0:
-                if pt1.angle_to(pt2) < tool.get_tool_cutting_angle():
+                if pt1.angle_to(pt2) < tool.get_tool_cutting_angle() - ANGLE_TOL:
                     next_index, pt = self.find_next_good_edge(index, stock_z_min, tool, allow_grooving)
                 else:
                     segs_out.add_segment(seg)
