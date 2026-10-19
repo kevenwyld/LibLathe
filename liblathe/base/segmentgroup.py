@@ -301,7 +301,10 @@ class SegmentGroup:
             if i + 1 < len(self.segments):
                 if self.segments[i].get_rotation() == self.segments[i + 1].get_rotation():
                     if self.segments[i].bulge == 0 and self.segments[i + 1].bulge == 0:
-                        self.segments[i].end = self.segments[i + 1].end
+                        # build a new segment rather than editing segments[i] in
+                        # place: the segment objects are shared with the part
+                        # outline, and mutating them corrupts the part geometry
+                        self.segments[i] = Segment(self.segments[i].start, self.segments[i + 1].end)
                         self.segments.pop(i + 1)
                         # call merge segments again
                         self.merge_segments()
