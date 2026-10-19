@@ -12,6 +12,9 @@ Intersection = namedtuple('Intersection', 'point, seg')
 
 class RoughOP(liblathe.op.base.BaseOP):
 
+    # finish roughing with a contour pass at the stock to leave
+    cleanup_pass = True
+
     def generate_path(self):
         """Generate the path for the Rough operation"""
         roughing_segment_group = self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
@@ -135,6 +138,24 @@ class RoughOP(liblathe.op.base.BaseOP):
                     raise ValueError("Calculated roughing path intersects part")
 
                 self.tool_paths.append(segmentgroup)
+
+        if self.cleanup_pass:
+            self.add_cleanup_pass(roughing_segment_group)
+
+    def add_cleanup_pass(self, roughing_segment_group):
+        """
+        Add a contour pass along the part at the stock to leave, after the
+        roughing passes. The roughing passes leave a staircase where the part
+        is tapered or curved (up to one step over high), and leave sections
+        alone entirely when there is less than one step over of material on
+        them; the cleanup pass takes all of that off, with nose radius
+        compensation, so the finishing pass meets an even stock to leave.
+        """
+        contour = roughing_segment_group.offset_path(self.stock_to_leave)
+        cleanup = self.contour_path(contour, "Calculated roughing cleanup path intersects part")
+        if cleanup is not None:
+            # tool_paths are emitted in reverse order: put the cleanup last
+            self.tool_paths.insert(0, cleanup)
 
     def generate_gcode(self):
         """Generate Gcode for the op segments"""
