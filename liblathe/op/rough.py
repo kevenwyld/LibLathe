@@ -46,13 +46,6 @@ class RoughOP(liblathe.op.base.BaseOP):
                 x_pos -= self.step_over
                 continue
 
-            # skip passes that would cut nothing: the boundary at this X is in
-            # front of the stock, or in front of the window start
-            boundary_z = roughing_boundary.z_at_x(x_pos)
-            if boundary_z and round(boundary_z, 5) >= round(min(self.stock.z_max, z_start), 5):
-                x_pos -= self.step_over
-                continue
-
             pt1 = Point(x_pos, 0, z_max)
             pt2 = Point(x_pos, 0, z_min)
             path_line = Segment(pt1, pt2)
@@ -61,69 +54,52 @@ class RoughOP(liblathe.op.base.BaseOP):
                 intersect, point = seg.intersect(path_line)
                 if intersect:
                     for p in point:
-                        intersection = Intersection(p, seg)
-                        intersections.append(intersection)
+                        # a crossing exactly at a vertex is reported by both
+                        # segments; count it once
+                        if any(abs(p.Z - i.point.Z) < 1e-7 for i in intersections):
+                            continue
+                        intersections.append(Intersection(p, seg))
+
+            # The pass alternates between air and material at each crossing.
+            # Whether it starts in material is not assumed: a window that
+            # starts inside the stock (e.g. limited to a groove) can put the
+            # pass start under the part's outline.
+            inside = self.inside_boundary(roughing_boundary, x_pos, z_max, x_min)
+
+            points = [Intersection(pt1, None)]
+            points.extend(sorted(intersections, key=lambda p: p.point.Z, reverse=True))
+            points.append(Intersection(pt2, None))
 
             # build list of segments
             segmentgroup = SegmentGroup()
+            for i in range(len(points) - 1):
+                in_material = inside != (i % 2 == 1)
+                if in_material:
+                    continue
+                primary_segment = Segment(points[i].point, points[i + 1].point)
+                if primary_segment.get_length() < 1e-6:
+                    continue
+                # entirely in front of the stock: nothing to cut
+                if min(points[i].point.Z, points[i + 1].point.Z) >= self.stock.z_max - 1e-6:
+                    continue
+                if points[i].seg:
+                    # starts on the boundary: skip slivers shorter than a step
+                    # over, otherwise lead in radially from the level above
+                    if primary_segment.get_length() < self.step_over:
+                        continue
+                    endPt = points[i].point
+                    startPt = endPt.project(self.leadin_angle, self.step_over)
+                    segmentgroup.add_segment(Segment(startPt, endPt))
 
-            if not intersections:
-                seg = path_line
-                segmentgroup.add_segment(seg)
+                # add the primary segment to the segment group
+                segmentgroup.add_segment(primary_segment)
 
-            if len(intersections) == 1:
-                # Only one intersection, trim line to intersection.
-                seg = Segment(pt1, intersections[0].point)
-                segmentgroup.add_segment(seg)
-                if intersections[0].seg:
-                    # add lead out
-                    startPt = intersections[0].point
+                if points[i + 1].seg:
+                    # add a lead out
+                    startPt = points[i + 1].point
                     endPt = startPt.project(self.leadout_angle, self.step_over)
-                    path_line = Segment(startPt, endPt)
-                    segmentgroup.add_segment(path_line)
+                    segmentgroup.add_segment(Segment(startPt, endPt))
 
-            if len(intersections) > 1:
-                # more than one intersection
-                # add the end points of the pass to generate new segments
-                intersection = Intersection(pt1, None)
-                intersections.insert(0, intersection)
-
-                intersection2 = Intersection(pt2, None)
-                intersections.append(intersection2)
-
-                #  sort the a list of intersections by their z position
-                intersections = sorted(intersections, key=lambda p: p.point.Z, reverse=True)
-
-                for i in range(len(intersections)):
-                    if i + 1 < len(intersections):
-                        if i % 2 == 0:
-                            # primary segment
-                            primary_segment = Segment(intersections[i].point, intersections[i + 1].point)
-
-                            # check the length of the pass before adding to the segmentgroup
-                            if primary_segment.get_length() < self.step_over:
-                                continue
-
-                            # if the intersection is connected to another segment
-                            if intersections[i].seg:
-                                # add a lead in
-                                # TODO: optimise this to match the max tool angle
-                                endPt = intersections[i].point
-                                startPt = endPt.project(self.leadin_angle, self.step_over)
-                                path_line = Segment(startPt, endPt)
-                                segmentgroup.add_segment(path_line)
-
-                            # add the primary segment to the segment group
-                            segmentgroup.add_segment(primary_segment)
-
-                            # if the intersection is connected to another segment
-                            if intersections[i + 1].seg:
-                                # add a lead out
-                                startPt = intersections[i + 1].point
-                                endPt = startPt.project(self.leadout_angle, self.step_over)
-                                path_line = Segment(startPt, endPt)
-                                segmentgroup.add_segment(path_line)
-            
             # entering inside the stock: feed in radially along the window
             # edge from the previous (already cut) pass level
             segs = segmentgroup.get_segments()
@@ -141,6 +117,28 @@ class RoughOP(liblathe.op.base.BaseOP):
 
         if self.cleanup_pass:
             self.add_cleanup_pass(roughing_segment_group)
+
+    @staticmethod
+    def inside_boundary(boundary, x, z, x_far):
+        """
+        True when the point (x, z) is on the part side of the roughing
+        boundary (between the boundary and the axis). Casts a ray from the
+        point straight out (toward x_far) and counts boundary crossings: the
+        boundary runs from the axis at the front of the part to its back, so
+        an odd count means the point is under it. The ray is nudged a hair
+        into the pass so a pass that starts level with a boundary vertex is
+        not counted twice.
+        """
+        z -= 1e-5
+        ray = Segment(Point(x, 0, z), Point(x_far - 10, 0, z))
+        hits = []
+        for seg in boundary.get_segments():
+            intersect, points = seg.intersect(ray)
+            if intersect:
+                for p in points:
+                    if not any(abs(p.X - h) < 1e-7 for h in hits):
+                        hits.append(p.X)
+        return len(hits) % 2 == 1
 
     def add_cleanup_pass(self, roughing_segment_group):
         """
