@@ -154,6 +154,10 @@ class SegmentGroup:
 
             return arcType
 
+        # drop zero-length segments: they come from offsetting/defeaturing faces
+        # that collapse to a point, and otherwise generate a retract-and-plunge
+        # (G0 into the part) to "cut" them
+        self.segments = [s for s in self.segments if s.get_length() > 1e-6]
         segments = self.get_segments()
 
         cmds = []
