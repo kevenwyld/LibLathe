@@ -82,6 +82,10 @@ class BaseOP:
         if self.tool is None:
             raise Warning("Tool is unset")
 
+        # a window with no length along Z has nothing to cut; don't produce
+        # a degenerate path for it
+        if self.z_start() - self.z_end() <= 1e-4:
+            return []
         self.generate_path()
         path = self.generate_gcode()
         if path:
