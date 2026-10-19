@@ -180,23 +180,26 @@ class SegmentGroup:
                 rapid = Command('G0', params)
                 cmds.append(rapid)
 
+            # handle unconnected segments (lines and arcs): retract, move
+            # across at the retract diameter, then feed in to the start
+            if not self.previous_segment_connected(seg) and segments.index(seg) != 0:
+                pt = get_pos(seg.start)
+                # rapid to the x_min
+                params = {'X': x_retract, 'F': hSpeed}
+                rapid = Command('G0', params)
+                cmds.append(rapid)
+                # rapid at x_min to the start of the segment
+                params = {'X': x_retract, 'Z': pt.Z, 'F': hSpeed}
+                rapid = Command('G0', params)
+                cmds.append(rapid)
+                # feed (not rapid) to the start of the cutting move: the
+                # start lies on or near the part, possibly in material
+                params = {'X': pt.X, 'Z': pt.Z, 'F': vSpeed}
+                cmd = Command('G1', params)
+                cmds.append(cmd)
+
             # handle line segments
             if seg.bulge == 0:
-                # handle unconnected segments
-                if not self.previous_segment_connected(seg) and segments.index(seg) != 0:
-                    pt = get_pos(seg.start)
-                    # rapid to the x_min
-                    params = {'X': x_retract, 'F': hSpeed}
-                    rapid = Command('G0', params)
-                    cmds.append(rapid)
-                    # rapid at x_min to the start of the segment
-                    params = {'X': x_retract, 'Z': pt.Z, 'F': hSpeed}
-                    rapid = Command('G0', params)
-                    cmds.append(rapid)
-                    # rapid to the start of the start of the cutting move
-                    params = {'X': pt.X, 'Z': pt.Z, 'F': hSpeed}
-                    cmd = Command('G0', params)
-                    cmds.append(cmd)
                 # perform the cutting
                 pt = get_pos(seg.end)
                 params = {'X': pt.X, 'Z': pt.Z, 'F': hSpeed}
