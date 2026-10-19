@@ -84,7 +84,44 @@ class BaseOP:
 
         self.generate_path()
         path = self.generate_gcode()
+        if path:
+            # keep the plane selection (G18) first
+            head = []
+            if path[0].get_movement() == 'G18':
+                head, path = path[:1], path[1:]
+            path = head + self.safe_start(path) + path + self.safe_end()
         return path
+
+    def safe_x(self):
+        """Output X (a radius, positive) outside the stock and any max diameter."""
+        return 0 - (self.x_outer() - self.clearance)
+
+    def safe_z(self):
+        """Z a clearance in front of the stock, or of the window if it starts further out."""
+        return max(self.stock.z_max, self.z_start()) + self.clearance
+
+    def safe_start(self, path):
+        """
+        Moves from wherever the tool is to the start of the operation without
+        crossing the stock: straight out in X to the safe diameter (radially,
+        at the current Z), then along Z outside the stock. If the first cut
+        starts in front of the stock, stop at the safe Z in front of it;
+        otherwise go straight to the first cut's Z, outside the stock, so the
+        operation's own first move only travels in X.
+        """
+        first = next((c for c in path if c.get_movement() == 'G0' and 'Z' in c.get_params()), None)
+        z = self.safe_z()
+        if first is not None and first.get_params()['Z'] < self.stock.z_max:
+            z = first.get_params()['Z']
+        return [Command('G0', {'X': self.safe_x()}), Command('G0', {'X': self.safe_x(), 'Z': z})]
+
+    def safe_end(self):
+        """
+        Leave the operation at the safe position: straight out in X at the
+        current Z, then to the safe Z in front of the stock, ready for the
+        next operation or a tool change.
+        """
+        return [Command('G0', {'X': self.safe_x()}), Command('G0', {'X': self.safe_x(), 'Z': self.safe_z()})]
 
     def generate_path(self):
         """Main processing function for each op"""
