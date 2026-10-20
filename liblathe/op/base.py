@@ -30,6 +30,12 @@ class BaseOP:
         self.step_over = 1.5
         self.finish_passes = 1
         self.stock_to_leave = 0
+        # separate stock to leave in X (radial, per side) and Z (axial); when
+        # unset (None) both are stock_to_leave
+        self.stock_to_leave_x = None
+        self.stock_to_leave_z = None
+        # repeat the last finish path once more ("spring pass")
+        self.spring_pass = False
         self.hfeed = 100
         self.vfeed = 50
         self.clearance = 3
@@ -42,6 +48,27 @@ class BaseOP:
     #   Z from z_end() (toward the chuck) to z_start() (toward the tailstock)
     #   X from x_outer() (largest radius) to x_inner() (smallest radius)
     # X is negative internally (the part profile is on the -X side).
+
+    def stock_xz(self):
+        """Stock to leave as (X, Z): radial on diameters, axial on faces."""
+        sx = self.stock_to_leave if self.stock_to_leave_x is None else self.stock_to_leave_x
+        sz = self.stock_to_leave if self.stock_to_leave_z is None else self.stock_to_leave_z
+        return float(sx), float(sz)
+
+    def offset_contour(self, segmentgroup, extra=0.0):
+        """
+        Offset a contour (e.g. the defeatured part) by the stock to leave,
+        plus `extra` in both directions. Equal X and Z stock is the exact
+        offset (a disc: lines and arcs). Different X and Z stock is the
+        rectangle dilation (X stock on diameters, Z stock on faces), as a
+        fine polyline: a contour with stock left on it is never a final
+        surface.
+        """
+        sx, sz = self.stock_xz()
+        sx, sz = sx + extra, sz + extra
+        if abs(sx - sz) < 1e-9:
+            return segmentgroup.offset_path(sx)
+        return segmentgroup.dilate_rect(sx, sz)
 
     def z_start(self):
         """Z where the operation starts: the stock front plus start_offset."""

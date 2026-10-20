@@ -13,7 +13,7 @@ class FaceOP(liblathe.op.base.BaseOP):
         part_boundbox = self.part_segment_group.boundbox()
         x_min = self.stock.x_min - self.extra_dia * 0.5 - self.clearance
         x_max = 0 - self.min_dia * 0.5
-        z_min = part_boundbox.z_max + self.stock_to_leave
+        z_min = part_boundbox.z_max + self.stock_xz()[1]
         z_max = self.stock.z_max + self.start_offset
 
         self.clearing_paths = []

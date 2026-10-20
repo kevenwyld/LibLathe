@@ -11,7 +11,7 @@ class ProfileOP(liblathe.op.base.BaseOP):
         # get the defeature part profile
         profile_segment_group = self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
         # define the base segment group using the stock to leave as a datum
-        base_segment_group = profile_segment_group.offset_path(self.stock_to_leave)
+        base_segment_group = self.offset_contour(profile_segment_group)
         f_pass = 0
         while f_pass < self.finish_passes:
             # create a new segment group
@@ -27,6 +27,11 @@ class ProfileOP(liblathe.op.base.BaseOP):
             self.tool_paths.append(segmentgroup)
             # increment f_pass to the next pass
             f_pass += 1
+
+        # spring pass: the last (innermost) path once more. tool_paths are
+        # emitted in reverse, so the innermost is tool_paths[0]
+        if self.spring_pass and self.tool_paths:
+            self.tool_paths.insert(0, self.tool_paths[0])
 
     def generate_gcode(self):
         """Generate Gcode for the op segments"""

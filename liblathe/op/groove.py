@@ -92,9 +92,13 @@ class GrooveOP(liblathe.op.base.BaseOP):
 
         profile = self._profile_radius(z_lo, top + w, dz)
 
+        sx, sz = self.stock_xz()
+
         def drop(allowance):
-            # profile dilated by the allowance (a disc around each point)
-            prof = _dilate(profile, allowance, dz)
+            # profile grown by the stock to leave plus the allowance: a
+            # rectangle, sx radially and sz along Z, so X stock lands on
+            # diameters and Z stock on walls and faces
+            prof = _dilate_rect(profile, sx + allowance, sz + allowance, dz)
             x0 = np.full(len(z_ref), -np.inf)
             for k in range(m + 1):
                 x0 = np.maximum(x0, prof.at(z_ref + u[k]) - edge[k])
@@ -105,7 +109,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
             guard[-1] = max(x0[-1], x0[-2]) if len(x0) > 1 else x0[-1]
             return guard
 
-        final = drop(self.stock_to_leave)
+        final = drop(0.0)
         deep = final < r_min - 1e-9
         if deep.any():
             self.warnings.append(
@@ -121,7 +125,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
             self.warnings.append(
                 "The finish allowance (%.3f) is more than the tool's turning depth (%.3f)"
                 % (allowance, self.turning_depth))
-        rough = np.maximum(drop(self.stock_to_leave + allowance), r_min) if allowance > 0 else final
+        rough = np.maximum(drop(allowance), r_min) if allowance > 0 else final
 
         # roughing plunges, front to back, at most step_over apart (and never
         # further apart than 80% of the blade width so neighbours overlap)
@@ -136,13 +140,17 @@ class GrooveOP(liblathe.op.base.BaseOP):
         # finish passes: the allowance in equal steps down to the final profile
         for k in range(passes):
             offset = allowance * (passes - 1 - k) / passes
-            prof = final if offset <= 0 else np.maximum(drop(self.stock_to_leave + offset), r_min)
+            prof = final if offset <= 0 else np.maximum(drop(offset), r_min)
             pts = _simplify(list(zip(prof.tolist(), z_ref.tolist())), 0.0005)
             self.finish_paths.append(pts)
 
+        # spring pass: the last finish path once more
+        if self.spring_pass and self.finish_paths:
+            self.finish_paths.append(self.finish_paths[-1])
+
     def _profile_radius(self, z_lo, z_hi, dz):
         """Largest part radius at each Z on a grid (None where there is no part)."""
-        pad = max(self.stock_to_leave + self.finish_allowance, 0) + float(self.groove_width) + 2 * dz
+        pad = max(max(self.stock_xz()) + self.finish_allowance, 0) + float(self.groove_width) + 2 * dz
         start = z_lo - pad
         n = int(math.ceil((z_hi + pad - start) / dz)) + 1
         values = np.full(n, -np.inf)
@@ -188,22 +196,14 @@ class _Profile:
         return out
 
 
-def _dilate(profile, radius, dz):
-    """Grow the profile by a disc of the given radius (stock to leave)."""
-    if radius <= 0:
-        return profile
+def _dilate_rect(profile, sx, sz, dz):
+    """Grow the profile by a rectangle: sz either way along Z, then sx radially."""
     vals = profile.values
     out = vals.copy()
-    k_max = int(math.floor(radius / dz))
-    for k in range(-k_max, k_max + 1):
-        lift = math.sqrt(max(radius * radius - (k * dz) ** 2, 0.0))
-        shifted = np.full(len(vals), -np.inf)
-        if k >= 0:
-            shifted[k:] = vals[:len(vals) - k]
-        else:
-            shifted[:k] = vals[-k:]
-        out = np.maximum(out, shifted + lift)
-    return _Profile(profile.start, dz, out)
+    for k in range(1, int(math.ceil(max(sz, 0.0) / dz - 1e-9)) + 1):
+        out[k:] = np.maximum(out[k:], vals[:-k])
+        out[:-k] = np.maximum(out[:-k], vals[k:])
+    return _Profile(profile.start, dz, out + max(sx, 0.0))
 
 
 def _edge_height(u, w, r):

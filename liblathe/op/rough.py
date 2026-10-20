@@ -31,8 +31,7 @@ class RoughOP(liblathe.op.base.BaseOP):
         x_inner = self.x_inner()
         # create roughing boundary offset by the stock to leave value
         # include a minimal offset to ensure the roughing passes don't intersect the part
-        offset = 0.01 + self.stock_to_leave
-        roughing_boundary = roughing_segment_group.offset_path(offset)
+        roughing_boundary = self.offset_contour(roughing_segment_group, extra=0.01)
         # define the x limit for roughing
         x_min = -abs(math.ceil(self.stock.x_length() + self.extra_dia * 0.5))
 
@@ -149,7 +148,7 @@ class RoughOP(liblathe.op.base.BaseOP):
         them; the cleanup pass takes all of that off, with nose radius
         compensation, so the finishing pass meets an even stock to leave.
         """
-        contour = roughing_segment_group.offset_path(self.stock_to_leave)
+        contour = self.offset_contour(roughing_segment_group)
         cleanup = self.contour_path(contour, "Calculated roughing cleanup path intersects part")
         if cleanup is not None:
             # tool_paths are emitted in reverse order: put the cleanup last

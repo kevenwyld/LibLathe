@@ -232,6 +232,59 @@ class SegmentGroup:
 
         return cmds
 
+    def dilate_rect(self, sx, sz, resolution=0.005, tolerance=0.0005):
+        """
+        The contour grown by a rectangle: sx in X (radially, away from the
+        axis) and sz in Z (both ways along the axis), returned as a polyline
+        from the front (on the axis) to the contour's last Z.
+
+        The contour must be a profile seen from outside the part (one radius
+        per Z, faces as vertical steps), as the defeatured part and its
+        offsets are. Computed on a Z grid at `resolution`; each grid value is
+        the largest of its neighbours so the polyline never cuts inside the
+        true dilation (faces may move up to one grid step outward), then
+        simplified to `tolerance`.
+        """
+        import numpy as np
+
+        segs = self.get_segments()
+        if not segs:
+            return SegmentGroup()
+        pts = []
+        for seg in segs:
+            pts.extend(_sample_points(seg, resolution / 2.5))
+        zs = [z for x, z in pts]
+        z_top_contour, z_end = max(zs), segs[-1].end.Z
+        start = min(zs) - sz - 2 * resolution
+        n = int(math.ceil((z_top_contour + sz + 2 * resolution - start) / resolution)) + 1
+        prof = np.full(n, -np.inf)
+        for x, z in pts:
+            i = int(round((z - start) / resolution))
+            if 0 <= i < n and -x > prof[i]:
+                prof[i] = -x
+        k_max = int(math.ceil(sz / resolution))
+        grown = prof.copy()
+        for k in range(1, k_max + 1):
+            grown[k:] = np.maximum(grown[k:], prof[:-k])
+            grown[:-k] = np.maximum(grown[:-k], prof[k:])
+        grown = grown + sx
+        guard = grown.copy()
+        guard[1:] = np.maximum(guard[1:], grown[:-1])
+        guard[:-1] = np.maximum(guard[:-1], grown[1:])
+
+        valid = np.where(np.isfinite(guard))[0]
+        i_top = valid.max()
+        i_end = max(int(math.floor((z_end - start) / resolution)), valid.min())
+        line = [(0.0, start + i_top * resolution)]
+        for i in range(i_top, i_end - 1, -1):
+            if np.isfinite(guard[i]):
+                line.append((-float(guard[i]), start + i * resolution))
+        line = _simplify_polyline(line, tolerance)
+        out = SegmentGroup()
+        for (x1, z1), (x2, z2) in zip(line[:-1], line[1:]):
+            out.add_segment(Segment(Point(x1, 0, z1), Point(x2, 0, z2)))
+        return out
+
     def clip_to_box(self, x_min, x_max, z_min, z_max, tol=1e-6):
         """
         Return a new SegmentGroup containing only the parts of this group's
@@ -699,3 +752,50 @@ def _clip_segment(seg, x_min, x_max, z_min, z_max, tol):
         pieces.append(Segment(start, end, bulge))
 
     return pieces
+
+
+def _sample_points(seg, step):
+    """Points (x, z) along a segment (line or arc) at most step apart, ends included."""
+    sx, sz, ex, ez = seg.start.X, seg.start.Z, seg.end.X, seg.end.Z
+    if seg.bulge == 0:
+        length = math.hypot(ex - sx, ez - sz)
+        n = max(1, int(math.ceil(length / step)))
+        return [(sx + (ex - sx) * i / n, sz + (ez - sz) * i / n) for i in range(n + 1)]
+    c = seg.get_centre_point()
+    rad = seg.get_radius()
+    a0 = math.atan2(sx - c.X, sz - c.Z)
+    included = seg.get_angle()
+    sweep = included
+    px, pz = c.X + rad * math.sin(a0 - included), c.Z + rad * math.cos(a0 - included)
+    qx, qz = c.X + rad * math.sin(a0 + included), c.Z + rad * math.cos(a0 + included)
+    if math.hypot(px - ex, pz - ez) < math.hypot(qx - ex, qz - ez):
+        sweep = -included
+    n = max(1, int(math.ceil(abs(sweep) * rad / step)))
+    return [(c.X + rad * math.sin(a0 + sweep * i / n), c.Z + rad * math.cos(a0 + sweep * i / n))
+            for i in range(n + 1)]
+
+
+def _simplify_polyline(points, tolerance):
+    """Douglas-Peucker on (x, z) points; keeps the end points."""
+    if len(points) < 3:
+        return points
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        a, b = stack.pop()
+        ax, az = points[a]
+        bx, bz = points[b]
+        dx, dz = bx - ax, bz - az
+        length = math.hypot(dx, dz)
+        worst, index = 0.0, None
+        for i in range(a + 1, b):
+            px, pz = points[i]
+            d = math.hypot(px - ax, pz - az) if length == 0 else abs(dx * (az - pz) - dz * (ax - px)) / length
+            if d > worst:
+                worst, index = d, i
+        if index is not None and worst > tolerance:
+            keep[index] = True
+            stack.append((a, index))
+            stack.append((index, b))
+    return [p for p, k in zip(points, keep) if k]
