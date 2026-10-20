@@ -39,7 +39,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
     # grid spacing along Z for the drop cutter
     resolution = 0.005
 
-    # tool geometry
+    # tool geometry (cutting_depth is the insert's grooving depth, La max)
     groove_width = 0
     corner_radius = 0
     cutting_depth = 0
@@ -55,18 +55,23 @@ class GrooveOP(liblathe.op.base.BaseOP):
         w = float(self.groove_width)
         if w <= 0:
             raise ValueError("Grooving tool width must be greater than zero")
+        if float(self.corner_radius) > w / 2 + 1e-9:
+            self.warnings.append(
+                "The corner radius (%.3f) is more than half the width (%.3f); using half the width, "
+                "i.e. a full radius" % (float(self.corner_radius), w))
         r = max(0.0, min(float(self.corner_radius), w / 2))
         dz = self.resolution
 
-        # Z range of the reference point (the chuck-side flank), as for the
-        # turning ops' tip: from the window end (so no part of the blade goes
-        # past it toward the chuck) to the window start, or the stock front.
-        # Toward the tailstock the blade may extend up to its width past the
-        # window start, which lets it reach the top of a wall at the start;
-        # the drop cutter keeps it clear of the part there too.
+        # Z range of the reference point (the chuck-side flank): the whole
+        # blade stays inside the window, so it never touches the part outside
+        # the Z range the user chose. Toward the tailstock the limit is the
+        # window start, or the stock front when the window starts in front
+        # of the stock.
         top = self.z_start() if self.starts_in_stock() else self.stock.z_max
         z_lo = self.z_end()
-        z_hi = top
+        z_hi = top - w
+        if z_hi < z_lo - 1e-9:
+            raise ValueError("The Z range (%.3f) is narrower than the grooving tool (%.3f)" % (top - z_lo, w))
 
         r_outer = -self.x_outer()            # stock radius (or max diameter / 2)
         # lowest the reference may go: the minimum diameter if one is set,
@@ -105,7 +110,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         if deep.any():
             self.warnings.append(
                 "The part is deeper than the tool can reach: material is left between Z %.3f and "
-                "Z %.3f. The cutting depth is measured from the max diameter (default: the stock); "
+                "Z %.3f. The grooving depth is measured from the max diameter (default: the stock); "
                 "if the surface has already been turned smaller, set Max Diameter to that diameter. "
                 "A Min Diameter also limits the depth." % (z_ref[deep].min(), z_ref[deep].max()))
         final = np.maximum(final, r_min)
