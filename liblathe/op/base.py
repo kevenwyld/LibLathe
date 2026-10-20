@@ -10,6 +10,10 @@ class BaseOP:
     # apply tool nose radius compensation to contour paths
     nose_comp = True
 
+    # the operation needs a turning insert (a liblathe Tool); operations
+    # that describe their tool with their own parameters set this False
+    needs_tool = True
+
     def __init__(self):
 
         self.stock = None
@@ -79,7 +83,7 @@ class BaseOP:
     def get_gcode(self):
         """Base function for all turning operations"""
 
-        if self.tool is None:
+        if self.needs_tool and self.tool is None:
             raise Warning("Tool is unset")
 
         # a window with no length along Z has nothing to cut; don't produce
