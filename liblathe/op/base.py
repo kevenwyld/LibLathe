@@ -36,6 +36,10 @@ class BaseOP:
         self.stock_to_leave_z = None
         # repeat the last finish path once more ("spring pass")
         self.spring_pass = False
+        # spacing of the finish passes; 0 uses the operation's own default
+        self.finish_step_over = 0.0
+        # Profile: also finish the front face (normally left to Face)
+        self.face_front = False
         self.hfeed = 100
         self.vfeed = 50
         self.clearance = 3
@@ -112,6 +116,10 @@ class BaseOP:
 
         if self.needs_tool and self.tool is None:
             raise Warning("Tool is unset")
+        # an unset (zero) vertical feed would put F0 on the moves into the
+        # cut; use the horizontal feed for them instead
+        if not self.vfeed or self.vfeed <= 0:
+            self.vfeed = self.hfeed
 
         # a window with no length along Z has nothing to cut; don't produce
         # a degenerate path for it
@@ -185,7 +193,7 @@ class BaseOP:
         """Set the tool for the operation"""
         self.tool = tool
 
-    def contour_path(self, segmentgroup, error="Calculated contour path intersects part"):
+    def contour_path(self, segmentgroup, error="Calculated contour path intersects part", drop_front_face=False):
         """
         Turn a contour (a path where the cutting edge touches the part, e.g. an
         offset of the defeatured part) into a finished tool path: check it
@@ -198,6 +206,8 @@ class BaseOP:
             raise ValueError(error)
         # tool nose radius compensation (imaginary tip programming)
         segmentgroup = self.nose_compensate(segmentgroup)
+        if drop_front_face:
+            segmentgroup = _without_front_face(segmentgroup)
         # keep the whole nose inside the working window
         segmentgroup = segmentgroup.clip_to_box(*self.clip_box())
         if not segmentgroup.count():
@@ -303,3 +313,24 @@ class BaseOP:
         leadin = Segment(start_point, end_point)
         # add the leadin segment at the start of segment group
         segmentgroup.insert_segment(leadin, 0)
+
+
+def _without_front_face(segmentgroup):
+    """
+    The path without its front face: the flat segments (along X, at one Z)
+    it starts with on or past the axis (offset_path() always starts a
+    contour on the axis, and nose compensation moves that start past it).
+    The path then starts at the front corner; a front chamfer or radius is
+    not flat and is kept.
+    """
+    segs = segmentgroup.get_segments()
+    i = 0
+    while (i < len(segs) and segs[i].bulge == 0 and abs(segs[i].start.Z - segs[i].end.Z) < 1e-6
+           and segs[i].start.X > -1e-6):
+        i += 1
+    if i == 0 or i >= len(segs):
+        return segmentgroup
+    out = SegmentGroup()
+    for seg in segs[i:]:
+        out.add_segment(seg)
+    return out

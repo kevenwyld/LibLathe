@@ -10,6 +10,7 @@ class ProfileOP(liblathe.op.base.BaseOP):
         """Generate the path for the profile operation"""
         # get the defeature part profile
         profile_segment_group = self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
+
         # define the base segment group using the stock to leave as a datum
         base_segment_group = self.offset_contour(profile_segment_group)
         f_pass = 0
@@ -17,9 +18,13 @@ class ProfileOP(liblathe.op.base.BaseOP):
             # create a new segment group
             segmentgroup = SegmentGroup()
             # generate the offset profile path
-            segmentgroup.extend(base_segment_group.offset_path(self.step_over * f_pass))
+            spacing = self.finish_step_over if self.finish_step_over and self.finish_step_over > 0 else self.step_over
+            segmentgroup.extend(base_segment_group.offset_path(spacing * f_pass))
             # nose compensation, window clipping and lead in
-            segmentgroup = self.contour_path(segmentgroup, "Calculated profile path intersects part")
+            # facing is the Face operation's job: unless asked to, the profile
+            # leaves out the front face and starts at the front corner
+            segmentgroup = self.contour_path(segmentgroup, "Calculated profile path intersects part",
+                                             drop_front_face=not self.face_front)
             if segmentgroup is None:
                 f_pass += 1
                 continue

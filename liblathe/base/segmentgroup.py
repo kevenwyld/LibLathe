@@ -157,7 +157,19 @@ class SegmentGroup:
         # drop zero-length segments: they come from offsetting/defeaturing faces
         # that collapse to a point, and otherwise generate a retract-and-plunge
         # (G0 into the part) to "cut" them
-        self.segments = [s for s in self.segments if s.get_length() > 1e-6]
+        # An arc whose ends (nearly) coincide is read by a controller as a full
+        # circle (G2/G3 with the same start and end), so drop arcs shorter than
+        # a micron as well, measured as the chord, not the arc length.
+        kept = []
+        for s in self.segments:
+            if s.get_length() <= 1e-6 or (s.bulge != 0 and s.start.distance_to(s.end) <= 1e-3):
+                continue
+            # close the hair-line gap a dropped piece leaves, so the path
+            # stays continuous (no retract and re-approach there)
+            if kept and kept[-1].end.distance_to(s.start) < 1e-3 and not kept[-1].end.is_same(s.start):
+                s = Segment(kept[-1].end, s.end, s.bulge)
+            kept.append(s)
+        self.segments = kept
         segments = self.get_segments()
 
         cmds = []
