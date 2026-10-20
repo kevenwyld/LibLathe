@@ -99,20 +99,26 @@ class GrooveOP(liblathe.op.base.BaseOP):
 
         sx, sz = self.stock_xz()
 
-        def drop(allowance):
+        def guard(x0):
+            # one cell either side, so straight moves between grid points
+            # cannot dip into a steep wall
+            out = np.maximum(x0, np.maximum(np.roll(x0, 1), np.roll(x0, -1)))
+            out[0] = max(x0[0], x0[1]) if len(x0) > 1 else x0[0]
+            out[-1] = max(x0[-1], x0[-2]) if len(x0) > 1 else x0[-1]
+            return out
+
+        def drop(allowance, guarded=True):
             # profile grown by the stock to leave plus the allowance: a
             # rectangle, sx radially and sz along Z, so X stock lands on
             # diameters and Z stock on walls and faces
             prof = _dilate_rect(profile, sx + allowance, sz + allowance, dz)
             x0 = np.full(len(z_ref), -np.inf)
-            for k in range(m + 1):
+            # the two flank lines (u = 0 and u = W) are the blade's boundary:
+            # part there is touching the flank (e.g. a wall the blade goes
+            # down flush with), not inside the blade
+            for k in range(1, m):
                 x0 = np.maximum(x0, prof.at(z_ref + u[k]) - edge[k])
-            # one cell either side, so straight moves between grid points
-            # cannot dip into a steep wall
-            guard = np.maximum(x0, np.maximum(np.roll(x0, 1), np.roll(x0, -1)))
-            guard[0] = max(x0[0], x0[1]) if len(x0) > 1 else x0[0]
-            guard[-1] = max(x0[-1], x0[-2]) if len(x0) > 1 else x0[-1]
-            return guard
+            return guard(x0) if guarded else x0
 
         final = drop(0.0)
         deep = final < r_min - 1e-9
@@ -160,7 +166,22 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 offsets.append(min(n_from_final * self.finish_step_over, allowance))
             else:
                 offsets.append(allowance * n_from_final / passes)
-        targets = [final if off <= 0 else np.maximum(drop(off), r_min) for off in offsets]
+        # unguarded here: the guard is applied within each pass's own range
+        # below, so positions outside it do not lift its ends
+        final_raw = np.maximum(drop(0.0, guarded=False), r_min)
+        targets = [final_raw if off <= 0 else np.maximum(drop(off, guarded=False), r_min) for off in offsets]
+        # Each pass works only within its own Z range: the range shrunk by
+        # the Z stock it leaves. Otherwise, at a range end next to a wall, the
+        # blade overlaps the stock the pass leaves on that wall and rolls its
+        # corner over the edge of that stock (cutting a rounded edge into it)
+        # before it can go down. Shrunk, it goes straight down at its own
+        # distance from the wall.
+        windows = []
+        for off in offsets:
+            keep = (z_ref <= z_hi - (sz + off) + 1e-9) & (z_ref >= z_lo + (sz + off) - 1e-9)
+            if not keep.any():
+                keep = np.zeros(len(z_ref), bool); keep[len(z_ref) // 2] = True
+            windows.append(keep)
 
         # Respect the insert's turning depth. Track the material the plunges
         # leave; wherever a finish pass would take a cut more than the
@@ -175,22 +196,23 @@ class GrooveOP(liblathe.op.base.BaseOP):
             geo.cut_position(floor, z0)
         t_depth = float(self.turning_depth or 0.0)
         steps_added = 0
-        for target in targets:
+        for target, keep in zip(targets, windows):
+            target, zs = guard(target[keep]), z_ref[keep]
             # step down from the material actually left, only over the
             # stretches that need it, until the pass is within the limit
             for _ in range(1000):
-                if not (t_depth > 0 and geo.overload(target, z_ref, t_depth)):
+                if not (t_depth > 0 and geo.overload(target, zs, t_depth)):
                     break
-                level = np.maximum(target, geo.touch(z_ref) - 0.9 * t_depth)
+                level = np.maximum(target, geo.touch(zs) - 0.9 * t_depth)
                 need = level > target + 1e-6
                 if not need.any():
                     break
                 for a, b in _runs(need):
-                    self.finish_paths.append(_simplify(list(zip(level[a:b + 1].tolist(), z_ref[a:b + 1].tolist())), 0.0005))
+                    self.finish_paths.append(_simplify(list(zip(level[a:b + 1].tolist(), zs[a:b + 1].tolist())), 0.0005))
                     steps_added += 1
-                geo.follow(level, z_ref)
-            self._add_finish(target, z_ref)
-            geo.follow(target, z_ref)
+                geo.follow(level, zs)
+            self._add_finish(target, zs)
+            geo.follow(target, zs)
         if steps_added:
             self.warnings.append(
                 "Added %d side-turning passes, each at most the turning depth (%.3f) deep, where the plunges "
@@ -233,6 +255,10 @@ class GrooveOP(liblathe.op.base.BaseOP):
             cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
             cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': self.vfeed}))
             cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
+        # passes go straight in and straight out: a pass may end down beside a
+        # wall, and the move out is still cutting (the wall's stock), so feed
+        # out until clear of the diameter, then rapid
+        r_clear = min(-self.x_outer() + 0.5, r_retract)
         for pts in self.finish_paths:
             if not pts:
                 continue
@@ -241,7 +267,10 @@ class GrooveOP(liblathe.op.base.BaseOP):
             cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
             for x, z in pts[1:]:
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
-            cmds.append(Command('G0', {'X': r_retract, 'Z': pts[-1][1]}))
+            x, z = pts[-1]
+            if x < r_clear:
+                cmds.append(Command('G1', {'X': r_clear, 'Z': z, 'F': self.vfeed}))
+            cmds.append(Command('G0', {'X': r_retract, 'Z': z}))
         return cmds
 
 
