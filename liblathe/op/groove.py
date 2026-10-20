@@ -46,6 +46,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
     turning_depth = 0
     # material the plunges leave for the finish passes
     finish_allowance = 0.2
+    # spacing of the finish passes; 0 splits the allowance equally
+    finish_step_over = 0.0
 
     def generate_path(self):
         self.warnings = []
@@ -127,26 +129,78 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 % (allowance, self.turning_depth))
         rough = np.maximum(drop(allowance), r_min) if allowance > 0 else final
 
-        # roughing plunges, front to back, at most step_over apart (and never
-        # further apart than 80% of the blade width so neighbours overlap)
+        # roughing plunges, front to back, across each stretch where the blade
+        # can actually go down (leaving the allowance): from one end of the
+        # stretch to the other, at most `spacing` apart (and never further
+        # than 80% of the blade width, so neighbours overlap). Positions
+        # fixed from the ends of the Z range miss the stretches next to
+        # walls, where the allowance blocks the blade at the range ends.
         spacing = min(self.step_over if self.step_over > 0 else w, 0.8 * w)
-        count = int(math.ceil((z_hi - z_lo) / spacing - 1e-9)) + 1 if z_hi > z_lo else 1
-        for j in range(count):
-            z0 = z_hi - min(j * spacing, z_hi - z_lo)
-            floor = float(np.interp(z0, z_ref[::-1], rough[::-1]))
-            if floor < r_outer - 1e-6:
-                self.plunges.append((z0, floor))
+        # where a plunge actually reaches the profile (to within the finish
+        # allowance), not just dips below the surface: a blade blocked by a
+        # wall still dips a little as its corner rolls over the edge
+        open_ = (rough < r_outer - 1e-3) & (rough <= final + allowance + 0.05)
+        z_asc, rough_asc = z_ref[::-1], rough[::-1]
+        for a, b in _runs(open_):
+            za, zb = z_ref[a], z_ref[b]
+            n = int(math.ceil((za - zb) / spacing - 1e-9)) if za > zb else 0
+            for j in range(n + 1):
+                z0 = za - (za - zb) * j / n if n else za
+                self.plunges.append((z0, float(np.interp(z0, z_asc, rough_asc))))
 
-        # finish passes: the allowance in equal steps down to the final profile
+        # finish passes: the outermost first, down to the final profile;
+        # finish_step_over apart when set, otherwise the allowance in equal steps
+        offsets = []
         for k in range(passes):
-            offset = allowance * (passes - 1 - k) / passes
-            prof = final if offset <= 0 else np.maximum(drop(offset), r_min)
-            pts = _simplify(list(zip(prof.tolist(), z_ref.tolist())), 0.0005)
-            self.finish_paths.append(pts)
+            n_from_final = passes - 1 - k
+            if self.finish_step_over and self.finish_step_over > 0:
+                offsets.append(min(n_from_final * self.finish_step_over, allowance))
+            else:
+                offsets.append(allowance * n_from_final / passes)
+        targets = [final if off <= 0 else np.maximum(drop(off), r_min) for off in offsets]
 
-        # spring pass: the last finish path once more
+        # Respect the insert's turning depth. Track the material the plunges
+        # leave, then follow each finish pass in order: wherever it would
+        # cut sideways deeper than the turning depth (e.g. where no plunge
+        # could reach), put side-turning passes in front of it that step down
+        # by at most the turning depth each.
+        geo = _Blade(z_lo, z_hi, w, dz, u, edge, r_outer)
+        for z0, floor in self.plunges:
+            geo.cut_position(floor, z0)
+        t_depth = float(self.turning_depth or 0.0)
+        steps_added = 0
+        for target in targets:
+            if t_depth > 0 and geo.side_cut(_halves(target, z_ref)) > t_depth + 1e-6:
+                touch = geo.touch(z_ref)
+                for m in range(1, 1000):
+                    level = np.maximum(target, touch - m * t_depth)
+                    if np.all(level <= target + 1e-9):
+                        break
+                    self._add_finish(level, z_ref)
+                    geo.follow(_halves(level, z_ref))
+                    steps_added += 1
+            self._add_finish(target, z_ref)
+            geo.follow(_halves(target, z_ref))
+        if steps_added:
+            self.warnings.append(
+                "Added %d side-turning passes, at most the turning depth (%.3f) deep, where the plunges "
+                "could not rough the groove" % (steps_added, t_depth))
+
+        # spring pass: the last finish pass (both of its halves) once more
         if self.spring_pass and self.finish_paths:
-            self.finish_paths.append(self.finish_paths[-1])
+            self.finish_paths.extend(self.finish_paths[-2:])
+
+    def _add_finish(self, prof, z_ref):
+        """
+        Add a finish pass as two paths that meet at its deepest point: from
+        the front down the first wall and along the bottom, then from the
+        back down the other wall and along the bottom the other way. Each
+        wall is finished moving straight down it, and the bottom is crossed
+        moving away from the walls, so the blade never moves sideways into
+        the stock left on a wall.
+        """
+        for xs, zs in _halves(prof, z_ref):
+            self.finish_paths.append(_simplify(list(zip(xs.tolist(), zs.tolist())), 0.0005))
 
     def _profile_radius(self, z_lo, z_hi, dz):
         """Largest part radius at each Z on a grid (None where there is no part)."""
@@ -194,6 +248,94 @@ class _Profile:
         ok = (i >= 0) & (i < len(self.values))
         out[ok] = self.values[i[ok]]
         return out
+
+
+def _runs(mask):
+    """(first, last) index pairs of the runs of True in a boolean array."""
+    runs, start = [], None
+    for i, v in enumerate(mask):
+        if v and start is None:
+            start = i
+        elif not v and start is not None:
+            runs.append((start, i - 1)); start = None
+    if start is not None:
+        runs.append((start, len(mask) - 1))
+    return runs
+
+
+def _halves(prof, z_ref):
+    """
+    A pass split at its deepest point (the middle of the deepest stretch)
+    into two paths in cutting order: front to that point, and back to it.
+    """
+    deepest = prof.min()
+    low = np.where(prof <= deepest + 1e-3)[0]
+    split = int(low[len(low) // 2])
+    front = (prof[:split + 1], z_ref[:split + 1])
+    back = (prof[split:][::-1], z_ref[split:][::-1])
+    return [front, back]
+
+
+class _Blade:
+    """
+    The material left in the Z range as the blade cuts, on a Z grid: a
+    radius per Z, starting at the outer limit. Used to check how deep each
+    pass cuts sideways.
+    """
+
+    def __init__(self, z_lo, z_hi, w, dz, u, edge, r_outer):
+        self.z0, self.dz = z_lo, dz
+        self.n = int(math.ceil((z_hi + w - z_lo) / dz)) + 2
+        self.material = np.full(self.n, float(r_outer))
+        self.offsets = np.rint(np.asarray(u) / dz).astype(int)
+        self.edge = np.asarray(edge)
+
+    def _index(self, z0):
+        return np.rint((np.asarray(z0) - self.z0) / self.dz).astype(int)
+
+    def cut_position(self, x0, z0):
+        """The blade at one position removes everything above its edge."""
+        idx = int(self._index(z0)) + self.offsets
+        ok = (idx >= 0) & (idx < self.n)
+        self.material[idx[ok]] = np.minimum(self.material[idx[ok]], x0 + self.edge[ok])
+
+    def touch(self, z_ref):
+        """Reference X at which the blade meets the material, at each position."""
+        base = self._index(z_ref)
+        out = np.full(len(z_ref), -np.inf)
+        for k, off in enumerate(self.offsets):
+            idx = base + off
+            ok = (idx >= 0) & (idx < self.n)
+            out[ok] = np.maximum(out[ok], self.material[idx[ok]] - self.edge[k])
+        return out
+
+    def side_cut(self, paths):
+        """
+        Deepest radial cut while the blade moves sideways along the paths,
+        following them in order so that material removed earlier (e.g. by
+        going down a wall) is gone when the blade gets further. Moving
+        straight down is plunging and does not count.
+        """
+        saved = self.material.copy()
+        worst = 0.0
+        for prof, z_ref in paths:
+            prev = None
+            for x0, z0 in zip(prof, z_ref):
+                if prev is not None and abs(x0 - prev) <= 2 * self.dz:
+                    idx = int(self._index(z0)) + self.offsets
+                    ok = (idx >= 0) & (idx < self.n)
+                    if ok.any():
+                        worst = max(worst, float(np.max(self.material[idx[ok]] - self.edge[ok])) - x0)
+                self.cut_position(x0, z0)
+                prev = x0
+        self.material = saved
+        return worst
+
+    def follow(self, paths):
+        """Remove the material along the paths."""
+        for prof, z_ref in paths:
+            for x0, z0 in zip(prof, z_ref):
+                self.cut_position(x0, z0)
 
 
 def _dilate_rect(profile, sx, sz, dz):
