@@ -48,6 +48,9 @@ class GrooveOP(liblathe.op.base.BaseOP):
     finish_allowance = 0.2
     # spacing of the finish passes; 0 splits the allowance equally
     finish_step_over = 0.0
+    # finish each pass as two halves meeting at the deepest point (down each
+    # wall toward the middle) instead of one pass in, across and out
+    finish_two_sided = False
 
     def generate_path(self):
         self.warnings = []
@@ -160,46 +163,52 @@ class GrooveOP(liblathe.op.base.BaseOP):
         targets = [final if off <= 0 else np.maximum(drop(off), r_min) for off in offsets]
 
         # Respect the insert's turning depth. Track the material the plunges
-        # leave, then follow each finish pass in order: wherever it would
-        # cut sideways deeper than the turning depth (e.g. where no plunge
-        # could reach), put side-turning passes in front of it that step down
-        # by at most the turning depth each.
+        # leave; wherever a finish pass would take a cut more than the
+        # turning depth deep over more than the turning depth of length
+        # (where no plunge could reach), put side-turning passes in front of
+        # it that step down by at most 90% of the turning depth each, re-measured
+        # from the material left, over just the stretches that need it. A thin layer,
+        # such as the finish stock on a wall or the bottom, is fine: that is
+        # a light cut whichever side of the blade takes it.
         geo = _Blade(z_lo, z_hi, w, dz, u, edge, r_outer)
         for z0, floor in self.plunges:
             geo.cut_position(floor, z0)
         t_depth = float(self.turning_depth or 0.0)
         steps_added = 0
         for target in targets:
-            if t_depth > 0 and geo.side_cut(_halves(target, z_ref)) > t_depth + 1e-6:
-                touch = geo.touch(z_ref)
-                for m in range(1, 1000):
-                    level = np.maximum(target, touch - m * t_depth)
-                    if np.all(level <= target + 1e-9):
-                        break
-                    self._add_finish(level, z_ref)
-                    geo.follow(_halves(level, z_ref))
+            # step down from the material actually left, only over the
+            # stretches that need it, until the pass is within the limit
+            for _ in range(1000):
+                if not (t_depth > 0 and geo.overload(target, z_ref, t_depth)):
+                    break
+                level = np.maximum(target, geo.touch(z_ref) - 0.9 * t_depth)
+                need = level > target + 1e-6
+                if not need.any():
+                    break
+                for a, b in _runs(need):
+                    self.finish_paths.append(_simplify(list(zip(level[a:b + 1].tolist(), z_ref[a:b + 1].tolist())), 0.0005))
                     steps_added += 1
+                geo.follow(level, z_ref)
             self._add_finish(target, z_ref)
-            geo.follow(_halves(target, z_ref))
+            geo.follow(target, z_ref)
         if steps_added:
             self.warnings.append(
-                "Added %d side-turning passes, at most the turning depth (%.3f) deep, where the plunges "
-                "could not rough the groove" % (steps_added, t_depth))
+                "Added %d side-turning passes, each at most the turning depth (%.3f) deep, where the plunges "
+                "left more than the insert can take sideways" % (steps_added, t_depth))
 
-        # spring pass: the last finish pass (both of its halves) once more
+        # spring pass: the last finish pass (both halves, if two-sided) once more
         if self.spring_pass and self.finish_paths:
-            self.finish_paths.extend(self.finish_paths[-2:])
+            self.finish_paths.extend(self.finish_paths[-(2 if self.finish_two_sided else 1):])
 
     def _add_finish(self, prof, z_ref):
         """
-        Add a finish pass as two paths that meet at its deepest point: from
-        the front down the first wall and along the bottom, then from the
-        back down the other wall and along the bottom the other way. Each
-        wall is finished moving straight down it, and the bottom is crossed
-        moving away from the walls, so the blade never moves sideways into
-        the stock left on a wall.
+        Add a finish pass: by default one path in, across and out (down the
+        front wall, along the bottom, up the back wall), which gives the
+        best finish; with finish_two_sided, two paths meeting at the deepest
+        point (down each wall toward the middle).
         """
-        for xs, zs in _halves(prof, z_ref):
+        parts = _halves(prof, z_ref) if self.finish_two_sided else [(prof, z_ref)]
+        for xs, zs in parts:
             self.finish_paths.append(_simplify(list(zip(xs.tolist(), zs.tolist())), 0.0005))
 
     def _profile_radius(self, z_lo, z_hi, dz):
@@ -309,33 +318,28 @@ class _Blade:
             out[ok] = np.maximum(out[ok], self.material[idx[ok]] - self.edge[k])
         return out
 
-    def side_cut(self, paths):
-        """
-        Deepest radial cut while the blade moves sideways along the paths,
-        following them in order so that material removed earlier (e.g. by
-        going down a wall) is gone when the blade gets further. Moving
-        straight down is plunging and does not count.
-        """
-        saved = self.material.copy()
-        worst = 0.0
-        for prof, z_ref in paths:
-            prev = None
-            for x0, z0 in zip(prof, z_ref):
-                if prev is not None and abs(x0 - prev) <= 2 * self.dz:
-                    idx = int(self._index(z0)) + self.offsets
-                    ok = (idx >= 0) & (idx < self.n)
-                    if ok.any():
-                        worst = max(worst, float(np.max(self.material[idx[ok]] - self.edge[ok])) - x0)
-                self.cut_position(x0, z0)
-                prev = x0
-        self.material = saved
-        return worst
+    def removed(self, prof, z_ref):
+        """Depth of material a path would remove, at each Z."""
+        before = self.material.copy()
+        self.follow(prof, z_ref)
+        depth = before - self.material
+        self.material = before
+        return depth
 
-    def follow(self, paths):
-        """Remove the material along the paths."""
-        for prof, z_ref in paths:
-            for x0, z0 in zip(prof, z_ref):
-                self.cut_position(x0, z0)
+    def overload(self, prof, z_ref, limit):
+        """
+        True when a path would remove a cut more than `limit` deep over more
+        than `limit` of length along Z: more than the insert takes sideways.
+        A thin layer (a wall's finish stock, the bottom's allowance) is not.
+        """
+        deep = self.removed(prof, z_ref) > limit + 1e-6
+        longest = max((b - a + 1 for a, b in _runs(deep)), default=0)
+        return longest * self.dz > limit + 1e-6
+
+    def follow(self, prof, z_ref):
+        """Remove the material along a path."""
+        for x0, z0 in zip(prof, z_ref):
+            self.cut_position(x0, z0)
 
 
 def _dilate_rect(profile, sx, sz, dz):
