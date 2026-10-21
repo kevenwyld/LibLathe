@@ -32,6 +32,20 @@ class RoughOP(liblathe.op.base.BaseOP):
         # create roughing boundary offset by the stock to leave value
         # include a minimal offset to ensure the roughing passes don't intersect the part
         roughing_boundary = self.offset_contour(roughing_segment_group, extra=0.01)
+        # The passes start and stop with the imaginary tip on this boundary,
+        # so it must be the tip's locus where the nose just touches the part,
+        # not the part itself: where the boundary falls away behind a pass
+        # (the pass starts inside a groove, behind its front wall), the nose
+        # reaches back into the wall otherwise. Diameters and faces in front
+        # of the tip are unchanged.
+        roughing_boundary = self.nose_compensate(roughing_boundary)
+        # with the tip programmed, the check that a pass stays clear of the
+        # part is made on the nose: its centre path against the part grown by
+        # the nose radius (a hair less, so touching is not a hit). The
+        # imaginary tip itself may lie inside the outline where the nose
+        # touches a slope or an arc.
+        r_nose = getattr(self.tool, "nose_radius", 0) or 0 if self.nose_comp else 0
+        check_group = self.part_segment_group.offset_path(r_nose - 0.005) if r_nose > 0.005 else self.part_segment_group
         # define the x limit for roughing
         x_min = -abs(math.ceil(self.stock.x_length() + self.extra_dia * 0.5))
 
@@ -109,13 +123,23 @@ class RoughOP(liblathe.op.base.BaseOP):
             x_pos -= self.step_over
 
             if segmentgroup.count():
-                if segmentgroup.intersects_group(self.part_segment_group):
+                if self._nose_path(segmentgroup).intersects_group(check_group):
                     raise ValueError("Calculated roughing path intersects part")
 
                 self.tool_paths.append(segmentgroup)
 
         if self.cleanup_pass:
             self.add_cleanup_pass(roughing_segment_group)
+
+    def _nose_path(self, segmentgroup):
+        """The path of the nose centre for a path of the imaginary tip."""
+        r = getattr(self.tool, "nose_radius", 0) or 0
+        if not self.nose_comp or r <= 0.005:
+            return segmentgroup
+        out = SegmentGroup()
+        for seg in segmentgroup.get_segments():
+            out.add_segment(Segment(Point(seg.start.X - r, 0, seg.start.Z + r), Point(seg.end.X - r, 0, seg.end.Z + r), seg.bulge))
+        return out
 
     @staticmethod
     def inside_boundary(boundary, x, z, x_far):
