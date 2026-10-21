@@ -7,7 +7,7 @@ paths and G-code for CNC lathes.
 
 This is a fork of [LibLathe](https://github.com/dubstar-04/LibLathe) by
 **Daniel Wood** ([dubstar-04](https://github.com/dubstar-04)), maintained for
-the [Turning Addon fork](https://github.com/kevenwyld/TurningAddon). It adds
+the [CAM Lathe Turning](https://github.com/kevenwyld/CAMLatheTurning) addon. It adds
 boring, threading to standard tolerance classes, grooving strategies, insert
 outline collision checks and a regression test suite.
 
