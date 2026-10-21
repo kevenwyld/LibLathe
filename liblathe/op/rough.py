@@ -26,11 +26,18 @@ class RoughOP(liblathe.op.base.BaseOP):
         # starts in front of the stock they start a clearance away, in air;
         # when it starts inside the stock they start on the window edge and
         # are entered radially (see below)
-        # radial entry with the part in front of the window (or lead-in set
-        # to 0); otherwise the passes start the lead-in in front, along Z
-        starts_in_stock = self.radial_entry()
+        # The passes cover the window. In front of the stock they start the
+        # lead-in in front, in air. Inside the stock they start on the
+        # window's edge: entered radially with part in front (or lead-in 0),
+        # otherwise each one starting at the edge is approached along Z from
+        # the lead-in in front, at its own radius (cutting only the stock
+        # in front above it, nothing outside the window below it).
+        lead = self.lead_in_length()
+        in_stock = self.starts_in_stock()
+        starts_in_stock = in_stock and self.radial_entry()
+        approach = in_stock and not starts_in_stock
         z_start = self.z_start()
-        z_max = z_start + self.lead_in_length()
+        z_max = z_start if in_stock else z_start + lead
         z_min = self.z_end()
         x_inner = self.x_inner()
         # create roughing boundary offset by the stock to leave value
@@ -124,6 +131,8 @@ class RoughOP(liblathe.op.base.BaseOP):
             if starts_in_stock and segs and segs[0].start.is_same(pt1):
                 entry = Segment(Point(x_pos - self.step_over, 0, z_start), pt1)
                 segmentgroup.insert_segment(entry, 0)
+            elif approach and segs and segs[0].start.is_same(pt1):
+                segmentgroup.insert_segment(Segment(Point(x_pos, 0, z_start + lead), pt1), 0)
 
             x_pos -= self.step_over
 
@@ -178,7 +187,10 @@ class RoughOP(liblathe.op.base.BaseOP):
         compensation, so the finishing pass meets an even stock to leave.
         """
         contour = self.offset_contour(roughing_segment_group)
-        cleanup = self.contour_path(contour, "Calculated roughing cleanup path intersects part")
+        # a window starting inside the stock has the part's front face on its
+        # edge (e.g. a selected diameter): left to Face, as Profile does
+        cleanup = self.contour_path(contour, "Calculated roughing cleanup path intersects part",
+                                    drop_front_face=self.starts_in_stock())
         if cleanup is not None:
             # tool_paths are emitted in reverse order: put the cleanup last
             self.tool_paths.insert(0, cleanup)

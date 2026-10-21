@@ -113,6 +113,25 @@ class test_LeadIn(unittest.TestCase):
                 self.assertAlmostEqual(o.lead_in_used, 1.0 + 3.0)
                 self.assertFalse(o.radial_entry())
 
+    def test_nothing_cut_outside_the_range(self):
+        """Approached along Z through the stock in front, but nothing in front of the
+        part (Z > -1) is cut below the part's front radius (12.821, to the tip), and the
+        front face (on the range's edge) is not faced: the range is the part from its front."""
+        for op in ("rough", "profile"):
+            with self.subTest(op=op):
+                cmds = R.make_op(op, "groove", {"start_offset": -1.0, "stock_to_leave": 0}).get_gcode()
+                pts, prev = [], None
+                for mv, x, z in R.moves(cmds):
+                    if mv == "G1" and prev is not None:
+                        pts += [(prev[0] + (x - prev[0]) * t, prev[1] + (z - prev[1]) * t) for t in (0, 0.5, 1)]
+                    prev = (x, z)
+                in_front = [r for r, z in pts if z > -1 + 1e-3]
+                self.assertTrue(in_front)
+                # the imaginary tip, not the nose: up to a nose radius (0.4) under the
+                # part where it goes round the front corner (it went to the axis before)
+                self.assertGreater(min(in_front), 12.821 - 0.4)
+                self.assertEqual([r for r, z in pts if abs(z + 1) < 1e-3 and r < 12.7], [])
+
     def test_part_in_front(self):
         """The range starts inside the part: entered radially."""
         o, _ = self._start("rough", {"start_offset": -10.0})

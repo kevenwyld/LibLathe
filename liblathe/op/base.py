@@ -327,7 +327,7 @@ class BaseOP:
         x_min = self.x_outer() + d if self.x_outer() > self.stock.x_min + 1e-6 else -inf
         x_max = self.x_inner() if self.min_dia > 0 else inf
         z_min = self.z_end()
-        z_max = self.z_start() if self.radial_entry() else inf
+        z_max = self.z_start() if self.starts_in_stock() else inf
         return x_min, x_max, z_min, z_max
 
     def nose_radius(self):
