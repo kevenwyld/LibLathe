@@ -47,6 +47,12 @@ class BaseOP:
         self.hfeed = 100
         self.vfeed = 50
         self.clearance = 3
+        # radial clearance for the safe position and radial approaches (None:
+        # the clearance); along Z the clearance is used
+        self.clearance_x = None
+        # radial lift-off at the end of each pass, beyond the outermost radius
+        # reached (None: step_over * finish_passes, as before)
+        self.retract = None
 
         self.leadin_angle = 270
         self.leadout_angle = 315
@@ -179,9 +185,13 @@ class BaseOP:
                 "the part there is steeper or tighter than this insert can follow. Use an insert with a smaller "
                 "tip angle or a different rotation, or limit the operation there" % (span, depth))
 
+    def radial_clearance(self):
+        """The radial clearance: clearance_x if set, else the clearance."""
+        return self.clearance if self.clearance_x is None else float(self.clearance_x)
+
     def safe_x(self):
         """Output X (a radius, positive) outside the stock and any max diameter."""
-        return 0 - (self.x_outer() - self.clearance)
+        return 0 - (self.x_outer() - self.radial_clearance())
 
     def safe_z(self):
         """Z a clearance in front of the stock, or of the window if it starts further out."""
@@ -344,7 +354,7 @@ class BaseOP:
             # the window starts inside the stock, with uncut material in
             # front: approach radially from outside the stock instead of
             # along Z through that material
-            x_pos = self.x_outer() - self.clearance
+            x_pos = self.x_outer() - self.radial_clearance()
             start_point = Point(x_pos, segment.start.Y, segment.start.Z)
         else:
             # calculate the new z_pos with lead in

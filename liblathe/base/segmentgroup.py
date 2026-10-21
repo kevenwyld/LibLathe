@@ -133,8 +133,10 @@ class SegmentGroup:
         min_retract_x = max(x_values, key=abs)
         return min_retract_x
 
-    def to_commands(self, part_segment_group, stock, step_over, finish_passes, hSpeed, vSpeed, invert_x=True):
-        """converts segmentgroup to gcode commands"""
+    def to_commands(self, part_segment_group, stock, step_over, finish_passes, hSpeed, vSpeed, invert_x=True,
+                    retract=None):
+        """converts segmentgroup to gcode commands. retract: the radial lift-off
+        beyond the outermost radius reached (default step_over * finish_passes)"""
 
         def get_pos(pnt):
             x = pnt.X
@@ -179,7 +181,7 @@ class SegmentGroup:
 
         for seg in segments:
             min_x_retract = self.get_min_retract_x(seg, part_segment_group)
-            x_retract = min_x_retract - step_over * finish_passes
+            x_retract = min_x_retract - (step_over * finish_passes if retract is None else float(retract))
             z_retract = segments[0].start.Z
 
             if invert_x:

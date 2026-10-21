@@ -250,7 +250,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
     def generate_gcode(self):
         """Plunges then finish passes, as commands with a positive radius X."""
         cmds = [Command('G18', {})]
-        r_retract = -self.x_outer() + self.clearance
+        r_retract = -self.x_outer() + self.radial_clearance()
         for z0, floor in self.plunges:
             cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
             cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': self.vfeed}))

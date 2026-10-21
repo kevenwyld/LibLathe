@@ -13,7 +13,7 @@ class FaceOP(liblathe.op.base.BaseOP):
     def generate_path(self):
         """Generate the path for the profile operation"""
         part_boundbox = self.part_segment_group.boundbox()
-        x_min = self.stock.x_min - self.extra_dia * 0.5 - self.clearance
+        x_min = self.stock.x_min - self.extra_dia * 0.5 - self.radial_clearance()
         # end with the nose's centre on the inner limit (the centreline, or the
         # minimum diameter, e.g. a bore): ending the imaginary tip there leaves
         # the nose's round uncut at the inner edge (the nub at the centre)
@@ -45,7 +45,8 @@ class FaceOP(liblathe.op.base.BaseOP):
 
         path = []
         for segmentgroup in reversed(self.clearing_paths):
-            rough = segmentgroup.to_commands(self.part_segment_group, self.stock, self.step_over, self.finish_passes, self.hfeed, self.vfeed)
+            rough = segmentgroup.to_commands(self.part_segment_group, self.stock, self.step_over, self.finish_passes, self.hfeed, self.vfeed,
+                                         retract=self.retract)
             path.extend(rough)
 
         return path

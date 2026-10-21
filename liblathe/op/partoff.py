@@ -37,7 +37,7 @@ class PartoffOP(liblathe.op.base.BaseOP):
             raise ValueError("Parting tool width must be greater than zero")
         self.z_ref = self.z_end() - w
         r_outer = -self.x_outer()
-        self.r_start = r_outer + self.clearance
+        self.r_start = r_outer + self.radial_clearance()
         # past the inner limit by the overtravel: the centreline, or the
         # minimum diameter (the bore of a tube), so the part comes free
         self.r_end = (-self.x_inner() if self.min_dia > 0 else 0.0) - float(self.overtravel)

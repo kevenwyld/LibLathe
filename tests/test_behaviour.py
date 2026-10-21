@@ -79,6 +79,21 @@ class test_ToolOutline(unittest.TestCase):
         self.assertEqual(self._warnings("profile", "shoulder", (55, 62.5)), [])
 
 
+class test_Clearances(unittest.TestCase):
+
+    def _rapid_radii(self, params):
+        cmds = R.make_op("rough", "bar12", dict(params, stock_to_leave=0)).get_gcode()
+        return sorted({round(x, 3) for mv, x, z in R.moves(cmds) if mv == "G0" and x is not None and x > 0})
+
+    def test_defaults(self):
+        """Lift-off: step_over * finish_passes (2); safe position: the clearance (3)."""
+        self.assertEqual(self._rapid_radii({}), [8.0, 9.0])
+
+    def test_set_retract_and_radial_clearance(self):
+        """Lift-off 0.3 and radial clearance 0.5 off the 12 mm bar."""
+        self.assertEqual(self._rapid_radii({"retract": 0.3, "clearance_x": 0.5}), [6.3, 6.5])
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):
