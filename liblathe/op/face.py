@@ -12,7 +12,11 @@ class FaceOP(liblathe.op.base.BaseOP):
         """Generate the path for the profile operation"""
         part_boundbox = self.part_segment_group.boundbox()
         x_min = self.stock.x_min - self.extra_dia * 0.5 - self.clearance
-        x_max = 0 - self.min_dia * 0.5
+        # end with the nose's centre on the inner limit (the centreline, or the
+        # minimum diameter, e.g. a bore): ending the imaginary tip there leaves
+        # the nose's round uncut at the inner edge (the nub at the centre)
+        r_nose = getattr(self.tool, "nose_radius", 0) or 0 if self.nose_comp else 0
+        x_max = 0 - self.min_dia * 0.5 + r_nose
         z_min = part_boundbox.z_max + self.stock_xz()[1]
         z_max = self.stock.z_max + self.start_offset
 

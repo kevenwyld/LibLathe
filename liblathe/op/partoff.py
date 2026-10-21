@@ -14,8 +14,9 @@ class PartoffOP(liblathe.op.base.BaseOP):
     back face), so the part keeps that face and the cut is made in the
     material on the chuck side: the reference Z is z_end() - width.
 
-    The plunge goes `overtravel` past the centreline so no pip is left, or to
-    the minimum diameter if one is set. If the insert's cutting depth cannot
+    The plunge goes `overtravel` past the inner limit so the part comes free:
+    the centreline (no pip is left), or the minimum diameter if one is set
+    (the bore of a tube). If the insert's cutting depth cannot
     reach that far from the outer limit, it stops at its reach and says so.
     """
 
@@ -39,7 +40,9 @@ class PartoffOP(liblathe.op.base.BaseOP):
                 % (self.z_end(), w, self.stock.z_min))
         r_outer = -self.x_outer()
         self.r_start = r_outer + self.clearance
-        self.r_end = -self.x_inner() if self.min_dia > 0 else -float(self.overtravel)
+        # past the inner limit by the overtravel: the centreline, or the
+        # minimum diameter (the bore of a tube), so the part comes free
+        self.r_end = (-self.x_inner() if self.min_dia > 0 else 0.0) - float(self.overtravel)
         if self.cutting_depth > 0 and r_outer - self.cutting_depth > self.r_end + 1e-9:
             reach = r_outer - self.cutting_depth
             self.warnings.append(
