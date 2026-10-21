@@ -180,6 +180,43 @@ class test_GrooveStrategies(unittest.TestCase):
         self.assertAlmostEqual(feeds[-1], -0.2)
 
 
+class test_ThreadRunOut(unittest.TestCase):
+    """A run-out: each pass tapers out to the crest over the last run_out of
+    the thread, instead of stopping dead at full depth."""
+
+    def _op(self, **extra):
+        return R.make_op("thread", "m12bar", dict(M12, S=56.196, F=0.0, thread_length=20.0, **extra))
+
+    def test_g33_passes(self):
+        op = self._op(run_out=1.75)
+        cmds = op.get_gcode()
+        g33 = [c.get_params() for c in cmds if c.get_movement() == "G33"]
+        z_back, z_full = op.z_back, op.z_back + 1.75
+        # in pairs: at depth to the run-out's start, then out to the crest at the end
+        self.assertEqual(len(g33), 2 * len(op.passes))
+        for (x, _), straight, taper in zip(op.passes, g33[0::2], g33[1::2]):
+            self.assertAlmostEqual(straight["X"], x)
+            self.assertAlmostEqual(straight["Z"], z_full)
+            self.assertAlmostEqual(taper["X"], op.thread_radius)
+            self.assertAlmostEqual(taper["Z"], z_back)
+
+    def test_no_run_out_unchanged(self):
+        op = self._op()
+        g33 = [c.get_params() for c in op.get_gcode() if c.get_movement() == "G33"]
+        self.assertEqual(len(g33), len(op.passes))
+        self.assertTrue(all(abs(p["Z"] - op.z_back) < 1e-9 for p in g33))
+
+    def test_g76_taper_words(self):
+        params = [c.get_params() for c in self._op(run_out=1.75, canned=True).get_gcode() if c.get_movement() == "G76"][0]
+        self.assertAlmostEqual(params["E"], 1.75)
+        self.assertEqual(params["L"], 2)
+        self.assertNotIn("E", [c.get_params() for c in self._op(canned=True).get_gcode() if c.get_movement() == "G76"][0])
+
+    def test_too_long(self):
+        with self.assertRaises(ValueError):
+            self._op(run_out=25.0).get_gcode()
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):

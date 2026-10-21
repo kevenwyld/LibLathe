@@ -61,6 +61,10 @@ class ThreadOP(liblathe.op.base.BaseOP):
     spring_passes = 1
     lead_in = 0.0            # 0: three pitches
     thread_length = 0.0      # 0: the whole window, from its start
+    # run-out: the last run_out of the thread (along Z) tapers out to the
+    # crest instead of stopping dead at full depth (G76's E, with L2); 0:
+    # stop dead (into a relief groove)
+    run_out = 0.0
     canned = False
     # the insert's profile, to keep it clear of the part at both ends
     tool_angle = 60.0
@@ -82,6 +86,12 @@ class ThreadOP(liblathe.op.base.BaseOP):
         self.z_back = self.z_end()
         if self.thread_length and self.thread_length > 0:
             self.z_back = max(self.z_back, self.z_front - self.thread_length)
+        self.run_out = max(0.0, float(self.run_out or 0.0))
+        if self.run_out >= self.z_front - self.z_back - 1e-9:
+            raise ValueError("The run-out (%.3f) is as long as the thread (%.3f) or longer"
+                             % (self.run_out, self.z_front - self.z_back))
+        # where the full-depth thread ends: the run-out tapers out from here
+        self.z_full = self.z_back + self.run_out
         lead = self.lead_in if self.lead_in > 0 else 3 * self.pitch
         self.z_drive = self.z_front + lead
         sign = 1.0 if self.internal else -1.0       # deeper is outward for internal threads
@@ -191,23 +201,34 @@ class ThreadOP(liblathe.op.base.BaseOP):
             # peak's offset from it (negative for external threads)
             peak_offset = self.thread_radius - self.r_clear
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
-            cmds.append(Command('G76', {'P': self.pitch, 'Z': self.z_back, 'I': peak_offset,
-                                        'J': self.first, 'K': self.thread_depth, 'R': self.degression,
-                                        'Q': self.infeed_angle, 'H': max(0, int(self.spring_passes))}))
+            params = {'P': self.pitch, 'Z': self.z_back, 'I': peak_offset,
+                      'J': self.first, 'K': self.thread_depth, 'R': self.degression,
+                      'Q': self.infeed_angle, 'H': max(0, int(self.spring_passes))}
+            if self.run_out > 0:
+                # a taper at the exit (L2) over the run-out's length (E)
+                params.update({'E': self.run_out, 'L': 2})
+            cmds.append(Command('G76', params))
             return cmds
         for x, z in self.passes:
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
-            cmds.append(Command('G33', {'X': x, 'Z': self.z_back, 'K': self.pitch}))
             # FreeCAD's path display skips G33 (and keeps the tool where the
-            # pass started), so it drew the retract below from the pass's
-            # start as a long tapered line. A G1 to where the G33 ended is a
+            # pass started), so it would draw the retract below from the pass's
+            # start as a long tapered line. A G1 to where each G33 ended is a
             # zero-length move on the machine, and in the display it draws
             # the thread cut itself.
             # (the move goes nowhere, so any feed will do; one is needed, as a
             # control refuses G1 without a feed rate, and threading has none)
             feed = self.hfeed if self.hfeed and self.hfeed > 0 else 1.0
-            cmds.append(Command('G1', {'X': x, 'Z': self.z_back, 'F': feed}))
+            cmds.append(Command('G33', {'X': x, 'Z': self.z_full, 'K': self.pitch}))
+            cmds.append(Command('G1', {'X': x, 'Z': self.z_full, 'F': feed}))
+            x_end = x
+            if self.run_out > 0:
+                # the run-out: out to the crest by the thread's end, still
+                # synchronised with the spindle
+                x_end = self.thread_radius
+                cmds.append(Command('G33', {'X': x_end, 'Z': self.z_back, 'K': self.pitch}))
+                cmds.append(Command('G1', {'X': x_end, 'Z': self.z_back, 'F': feed}))
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_back}))
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
         return cmds
