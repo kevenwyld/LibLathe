@@ -196,9 +196,16 @@ class ThreadOP(liblathe.op.base.BaseOP):
         for x, z in self.passes:
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
-            # X too, although it does not change: G33 is not a modal move to
-            # every path display, which then draws it from X0
             cmds.append(Command('G33', {'X': x, 'Z': self.z_back, 'K': self.pitch}))
+            # FreeCAD's path display skips G33 (and keeps the tool where the
+            # pass started), so it drew the retract below from the pass's
+            # start as a long tapered line. A G1 to where the G33 ended is a
+            # zero-length move on the machine, and in the display it draws
+            # the thread cut itself.
+            # (the move goes nowhere, so any feed will do; one is needed, as a
+            # control refuses G1 without a feed rate, and threading has none)
+            feed = self.hfeed if self.hfeed and self.hfeed > 0 else 1.0
+            cmds.append(Command('G1', {'X': x, 'Z': self.z_back, 'F': feed}))
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_back}))
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
         return cmds
