@@ -53,6 +53,10 @@ class BaseOP:
         # radial lift-off at the end of each pass, beyond the outermost radius
         # reached (None: step_over * finish_passes, as before)
         self.retract = None
+        # how far in front of the window's start the passes begin (along Z);
+        # 0 enters radially. None: worked out (see lead_in_length). (Not
+        # lead_in: the thread op has its own, along its thread.)
+        self.pass_lead_in = None
 
         self.leadin_angle = 270
         self.leadout_angle = 315
@@ -124,6 +128,36 @@ class BaseOP:
         """True when z_start() is behind the front of the stock, i.e. there is
         uncut material in front of the window."""
         return self.z_start() < self.stock.z_max - 1e-6
+
+    def part_in_front(self):
+        """True when some of the part lies in front of the window's start
+        (e.g. a flange ahead of a selected diameter)."""
+        zs = self.z_start()
+        return any(max(seg.start.Z, seg.end.Z) > zs + 1e-6 for seg in self.part_segment_group.get_segments())
+
+    def lead_in_length(self):
+        """
+        How far in front of the window's start the passes begin. As set; or
+        a clearance when the window starts at or in front of the stock;
+        when it starts inside the stock with only stock in front (e.g. a
+        diameter selected up to the part's front, the stock longer), a
+        clearance in front of the stock, cutting through that stock; with
+        part in front, 0: the passes are entered radially.
+        """
+        if self.pass_lead_in is not None:
+            lead = max(0.0, float(self.pass_lead_in))
+        elif not self.starts_in_stock():
+            lead = float(self.clearance)
+        elif self.part_in_front():
+            lead = 0.0
+        else:
+            lead = self.stock.z_max - self.z_start() + float(self.clearance)
+        self.lead_in_used = lead
+        return lead
+
+    def radial_entry(self):
+        """The passes are entered radially (no lead-in along Z)."""
+        return self.lead_in_length() <= 1e-9
 
     def set_params(self, params):
         """Set operations parameters"""
@@ -293,7 +327,7 @@ class BaseOP:
         x_min = self.x_outer() + d if self.x_outer() > self.stock.x_min + 1e-6 else -inf
         x_max = self.x_inner() if self.min_dia > 0 else inf
         z_min = self.z_end()
-        z_max = self.z_start() if self.starts_in_stock() else inf
+        z_max = self.z_start() if self.radial_entry() else inf
         return x_min, x_max, z_min, z_max
 
     def nose_radius(self):
@@ -350,15 +384,21 @@ class BaseOP:
     def add_leadin(self, segmentgroup):
         # get the first segment of the segment group
         segment = segmentgroup.get_segments()[0]
-        if self.starts_in_stock():
-            # the window starts inside the stock, with uncut material in
-            # front: approach radially from outside the stock instead of
-            # along Z through that material
+        if self.radial_entry():
+            # the window starts inside the stock with the part in front (or
+            # the lead-in is set to 0): approach radially from outside the
+            # stock instead of along Z through that material
             x_pos = self.x_outer() - self.radial_clearance()
             start_point = Point(x_pos, segment.start.Y, segment.start.Z)
-        else:
-            # calculate the new z_pos with lead in
+        elif self.pass_lead_in is None and not self.starts_in_stock():
+            # the default: a clearance in front of the contour's start
             z_pos = segment.start.Z + self.clearance
+            self.lead_in_used = self.clearance
+            start_point = Point(segment.start.X, segment.start.Y, z_pos)
+        else:
+            # along Z, from the lead-in (as set, or through the stock in
+            # front of the window) in front of the window's start
+            z_pos = self.z_start() + self.lead_in_length()
             # create the new start point
             start_point = Point(segment.start.X, segment.start.Y, z_pos)
         # use the segments start as the leadin end point

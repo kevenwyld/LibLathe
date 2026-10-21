@@ -94,6 +94,36 @@ class test_Clearances(unittest.TestCase):
         self.assertEqual(self._rapid_radii({"retract": 0.3, "clearance_x": 0.5}), [6.3, 6.5])
 
 
+class test_LeadIn(unittest.TestCase):
+    """The grooved part's front is 1 behind the stock's (Z 0); the window is
+    moved with start_offset (from the stock's front)."""
+
+    def _start(self, op, params):
+        o = R.make_op(op, "groove", dict(params, stock_to_leave=0))
+        cmds = o.get_gcode()
+        feeds = [(x, z) for mv, x, z in R.moves(cmds) if mv == "G1"]
+        return o, feeds[0]
+
+    def test_only_stock_in_front(self):
+        """The range starts at the part's front: the passes lead in from a clearance in
+        front of the stock, through the stock in front of the part."""
+        for op in ("rough", "profile"):
+            with self.subTest(op=op):
+                o, (x, z) = self._start(op, {"start_offset": -1.0})
+                self.assertAlmostEqual(o.lead_in_used, 1.0 + 3.0)
+                self.assertFalse(o.radial_entry())
+
+    def test_part_in_front(self):
+        """The range starts inside the part: entered radially."""
+        o, _ = self._start("rough", {"start_offset": -10.0})
+        self.assertTrue(o.radial_entry())
+        self.assertEqual(o.lead_in_used, 0.0)
+
+    def test_set(self):
+        o, _ = self._start("rough", {"start_offset": -1.0, "pass_lead_in": 1.5})
+        self.assertAlmostEqual(o.lead_in_used, 1.5)
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):

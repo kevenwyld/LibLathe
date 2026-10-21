@@ -26,9 +26,11 @@ class RoughOP(liblathe.op.base.BaseOP):
         # starts in front of the stock they start a clearance away, in air;
         # when it starts inside the stock they start on the window edge and
         # are entered radially (see below)
-        starts_in_stock = self.starts_in_stock()
+        # radial entry with the part in front of the window (or lead-in set
+        # to 0); otherwise the passes start the lead-in in front, along Z
+        starts_in_stock = self.radial_entry()
         z_start = self.z_start()
-        z_max = z_start if starts_in_stock else z_start + self.clearance
+        z_max = z_start + self.lead_in_length()
         z_min = self.z_end()
         x_inner = self.x_inner()
         # create roughing boundary offset by the stock to leave value
