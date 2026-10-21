@@ -51,6 +51,34 @@ class test_Turning(unittest.TestCase):
         self.assertAlmostEqual(min(feed_radii(cmds)), -0.4, places=3)
 
 
+class test_ToolOutline(unittest.TestCase):
+
+    def _warnings(self, op, part, tool=None):
+        o = R.make_op(op, part, {})
+        if tool:
+            o.tool.set_tip_angle(tool[0])
+            o.tool.set_rotation(tool[1])
+        o.get_gcode()
+        return [w for w in getattr(o, "warnings", []) if "would hit the part" in w]
+
+    def test_no_false_alarms(self):
+        """The test parts with their inserts: nothing but the nose touches the part."""
+        for part in ("ball", "groove", "bar12", "m12bar", "dome", "shoulder"):
+            for op in ("rough", "profile", "face"):
+                with self.subTest(part=part, op=op):
+                    self.assertEqual(self._warnings(op, part), [])
+
+    def test_square_shoulder_with_a_swept_back_leading_edge(self):
+        """An 80 deg insert at rotation 95 (leading edge at 135 deg) cannot reach into a
+        square shoulder's corner: its leading edge would be inside the shoulder."""
+        w = self._warnings("profile", "shoulder", (80, 95))
+        self.assertEqual(len(w), 1)
+        self.assertIn("Z -20.000", w[0])
+
+    def test_square_shoulder_with_a_90_deg_leading_edge(self):
+        self.assertEqual(self._warnings("profile", "shoulder", (55, 62.5)), [])
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):

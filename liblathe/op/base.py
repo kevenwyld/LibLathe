@@ -157,7 +157,27 @@ class BaseOP:
             if path[0].get_movement() == 'G18':
                 head, path = path[:1], path[1:]
             path = head + self.safe_start(path) + path + self.safe_end()
+            self.check_tool_outline(path)
         return path
+
+    # operations with a turning insert check its outline along the path
+    checks_tool_outline = False
+
+    def check_tool_outline(self, path):
+        """Warn where the insert's outline (outside its cutting corner) would
+        enter the part along the path; see liblathe.base.collision."""
+        if not self.checks_tool_outline or self.tool is None or not getattr(self.tool, "tip_angle", None) \
+                or not getattr(self.tool, "edge_length", None):
+            return
+        from liblathe.base import collision
+        if not hasattr(self, "warnings"):
+            self.warnings = []
+        for z_from, z_to, depth in collision.check(path, self.tool, self.target_outline()):
+            span = "at Z %.3f" % z_from if abs(z_from - z_to) < 1e-6 else "between Z %.3f and Z %.3f" % (z_from, z_to)
+            self.warnings.append(
+                "The insert would hit the part with an edge or its body (not the cutting nose) %s, up to %.2f deep: "
+                "the part there is steeper or tighter than this insert can follow. Use an insert with a smaller "
+                "tip angle or a different rotation, or limit the operation there" % (span, depth))
 
     def safe_x(self):
         """Output X (a radius, positive) outside the stock and any max diameter."""

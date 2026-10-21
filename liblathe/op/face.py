@@ -8,6 +8,8 @@ from liblathe.base.segmentgroup import SegmentGroup
 
 class FaceOP(liblathe.op.base.BaseOP):
 
+    checks_tool_outline = True
+
     def generate_path(self):
         """Generate the path for the profile operation"""
         part_boundbox = self.part_segment_group.boundbox()

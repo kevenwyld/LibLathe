@@ -12,6 +12,8 @@ Intersection = namedtuple('Intersection', 'point, seg')
 
 class RoughOP(liblathe.op.base.BaseOP):
 
+    checks_tool_outline = True
+
     # finish roughing with a contour pass at the stock to leave
     cleanup_pass = True
 

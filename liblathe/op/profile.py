@@ -6,6 +6,8 @@ from liblathe.base.segmentgroup import SegmentGroup
 
 class ProfileOP(liblathe.op.base.BaseOP):
 
+    checks_tool_outline = True
+
     def generate_path(self):
         """Generate the path for the profile operation"""
         # get the defeature part profile
