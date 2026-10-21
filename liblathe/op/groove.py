@@ -51,10 +51,23 @@ class GrooveOP(liblathe.op.base.BaseOP):
     # finish each pass as two halves meeting at the deepest point (down each
     # wall toward the middle) instead of one pass in, across and out
     finish_two_sided = False
+    # roughing: "plunge" (side by side, full depth) or "side_turn" (levels:
+    # a plunge of one step down, then a traverse along Z at that depth,
+    # alternating direction, less tool pressure in wide grooves)
+    strategy = "plunge"
+    # side_turn: depth of each level; 0: 90% of the turning depth (half the
+    # blade width without one)
+    step_down = 0.0
+    # pecking on plunges: peck_depth > 0 feeds in that far at a time, backing
+    # off peck_retract between pecks (or out of the cut, with peck_full_retract)
+    peck_depth = 0.0
+    peck_retract = 0.2
+    peck_full_retract = False
 
     def generate_path(self):
         self.warnings = []
         self.plunges = []
+        self.rough_paths = []
         self.finish_paths = []
 
         w = float(self.groove_width)
@@ -150,6 +163,13 @@ class GrooveOP(liblathe.op.base.BaseOP):
         # wall still dips a little as its corner rolls over the edge
         open_ = (rough < r_outer - 1e-3) & (rough <= final + allowance + 0.05)
         z_asc, rough_asc = z_ref[::-1], rough[::-1]
+        geo = _Blade(z_lo, z_hi, w, dz, u, edge, r_outer)
+        t_depth = float(self.turning_depth or 0.0)
+        if self.strategy == "side_turn":
+            self._side_turn(rough, z_ref, r_outer, w, t_depth, geo)
+            # what the traverses could not reach (stretches too short for one,
+            # under half the blade's width): plunged as usual
+            open_ = open_ & (geo.touch(z_ref) > rough + allowance + 0.05)
         for a, b in _runs(open_):
             za, zb = z_ref[a], z_ref[b]
             n = int(math.ceil((za - zb) / spacing - 1e-9)) if za > zb else 0
@@ -191,10 +211,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
         # from the material left, over just the stretches that need it. A thin layer,
         # such as the finish stock on a wall or the bottom, is fine: that is
         # a light cut whichever side of the blade takes it.
-        geo = _Blade(z_lo, z_hi, w, dz, u, edge, r_outer)
         for z0, floor in self.plunges:
             geo.cut_position(floor, z0)
-        t_depth = float(self.turning_depth or 0.0)
         steps_added = 0
         for target, keep in zip(targets, windows):
             target, zs = guard(target[keep]), z_ref[keep]
@@ -221,6 +239,54 @@ class GrooveOP(liblathe.op.base.BaseOP):
         # spring pass: the last finish pass (both halves, if two-sided) once more
         if self.spring_pass and self.finish_paths:
             self.finish_paths.extend(self.finish_paths[-(2 if self.finish_two_sided else 1):])
+
+    def _side_turn(self, rough, z_ref, r_outer, w, t_depth, geo):
+        """
+        Roughing in levels: from the outer limit down by step_down at a time
+        (to the rough profile), a traverse along Z at each level over every
+        stretch where it removes material, alternating direction so the next
+        level starts where this one ended. A stretch shorter than half the
+        blade width (a groove under about 1.5 blade widths) is left to
+        plunges: a traverse there is little more than a plunge.
+        """
+        step = float(self.step_down) if self.step_down and self.step_down > 0 else (
+            0.9 * t_depth if t_depth > 0 else 0.5 * w)
+        if t_depth > 0 and step > t_depth + 1e-9:
+            self.warnings.append("The step down (%.3f) is more than the tool's turning depth (%.3f)" % (step, t_depth))
+        floor = float(np.min(rough))
+        level, forward, k = r_outer, True, 0
+        while level > floor + 1e-6 and k < 10000:
+            k += 1
+            level = max(level - step, floor)
+            path = np.maximum(rough, level)
+            cuts = path < geo.touch(z_ref) - 1e-6
+            runs = [(a, b) for a, b in _runs(cuts) if z_ref[a] - z_ref[b] >= 0.5 * w - 1e-9]
+            if not forward:
+                runs = runs[::-1]
+            for a, b in runs:
+                xs, zs = path[a:b + 1], z_ref[a:b + 1]
+                pts = list(zip(xs.tolist(), zs.tolist()))
+                self.rough_paths.append(_simplify(pts if forward else pts[::-1], 0.0005))
+                geo.follow(xs, zs)
+            forward = not forward
+
+    def _plunge(self, cmds, z0, floor, r_retract, r_top):
+        """A plunge at z0 from the retract radius to floor: in one feed move,
+        or pecking from the material's top (r_top) by peck_depth."""
+        cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
+        peck = float(self.peck_depth or 0.0)
+        if peck > 0:
+            x = min(r_top, r_retract)
+            while x - peck > floor + 1e-6:
+                x -= peck
+                cmds.append(Command('G1', {'X': x, 'Z': z0, 'F': self.vfeed}))
+                back = r_retract if self.peck_full_retract else min(x + float(self.peck_retract), r_retract)
+                cmds.append(Command('G0', {'X': back, 'Z': z0}))
+                if self.peck_full_retract:
+                    # back in at rapid to just short of where it reached
+                    cmds.append(Command('G0', {'X': min(x + float(self.peck_retract), r_retract), 'Z': z0}))
+        cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': self.vfeed}))
+        cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
 
     def _add_finish(self, prof, z_ref):
         """
@@ -251,14 +317,36 @@ class GrooveOP(liblathe.op.base.BaseOP):
         """Plunges then finish passes, as commands with a positive radius X."""
         cmds = [Command('G18', {})]
         r_retract = -self.x_outer() + self.radial_clearance()
+        r_top = -self.x_outer()
         for z0, floor in self.plunges:
-            cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
-            cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': self.vfeed}))
-            cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
+            self._plunge(cmds, z0, floor, r_retract, r_top)
         # passes go straight in and straight out: a pass may end down beside a
         # wall, and the move out is still cutting (the wall's stock), so feed
         # out until clear of the diameter, then rapid
         r_clear = min(-self.x_outer() + 0.5, r_retract)
+        # side-turning levels: a level that starts where the last one ended
+        # (alternating direction) steps straight down instead of retracting
+        last = None
+        for i, pts in enumerate(self.rough_paths):
+            if not pts:
+                continue
+            x, z = pts[0]
+            if last is not None and abs(last[1] - z) < 1e-6 and x <= last[0] + 1e-9:
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+            else:
+                if last is not None:
+                    if last[0] < r_clear:
+                        cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': self.vfeed}))
+                    cmds.append(Command('G0', {'X': r_retract, 'Z': last[1]}))
+                cmds.append(Command('G0', {'X': r_retract, 'Z': z}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+            for x, z in pts[1:]:
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
+            last = pts[-1]
+        if last is not None:
+            if last[0] < r_clear:
+                cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': self.vfeed}))
+            cmds.append(Command('G0', {'X': r_retract, 'Z': last[1]}))
         for pts in self.finish_paths:
             if not pts:
                 continue

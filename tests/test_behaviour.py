@@ -143,6 +143,43 @@ class test_LeadIn(unittest.TestCase):
         self.assertAlmostEqual(o.lead_in_used, 1.5)
 
 
+class test_GrooveStrategies(unittest.TestCase):
+
+    BLADE = {"groove_width": 3, "corner_radius": 0.3, "cutting_depth": 10, "turning_depth": 1.5}
+
+    def test_side_turn_levels(self):
+        """Side-turn: traverses one step down (0.9 x the turning depth) apart, chained."""
+        op = R.make_op("groove", "groove", dict(self.BLADE, strategy="side_turn"))
+        cmds = op.get_gcode()
+        levels = sorted({round(p[0][0], 6) for p in op.rough_paths if p}, reverse=True)
+        steps = [a - b for a, b in zip([-op.x_outer()] + levels[:-1], levels)]
+        self.assertTrue(op.rough_paths)
+        self.assertTrue(all(st <= 0.9 * 1.5 + 1e-6 for st in steps))
+        g0_plunge = sum(1 for c in R.make_op("groove", "groove", dict(self.BLADE)).get_gcode() if c.get_movement() == "G0")
+        self.assertLess(sum(1 for c in cmds if c.get_movement() == "G0"), g0_plunge / 4)
+
+    def test_side_turn_no_gouge(self):
+        self.assertGreater(test_Groove._clearance(test_Groove(), {"strategy": "side_turn", "turning_depth": 1.5}), -1e-4)
+
+    def test_pecking(self):
+        """Pecks of peck_depth from the stock's top, backing off peck_retract, to the floor."""
+        op = R.make_op("groove", "groove", dict(self.BLADE, peck_depth=2.0))
+        cmds = op.get_gcode()
+        z0, floor = op.plunges[0]
+        xs = [(c.get_movement(), c.get_params()["X"]) for c in cmds if abs(c.get_params().get("Z", 99) - z0) < 1e-9]
+        feeds = [x for m, x in xs if m == "G1"]
+        top = -op.x_outer()
+        self.assertAlmostEqual(feeds[0], top - 2.0)
+        self.assertAlmostEqual(feeds[-1], floor)
+        self.assertTrue(all(abs((a - b) - 2.0) < 1e-6 for a, b in zip(feeds[:-2], feeds[1:-1])))
+
+    def test_partoff_pecking(self):
+        cmds = R.make_op("partoff", "groove", dict(BLADE, end_offset=-60, peck_depth=3.0, peck_full_retract=True)).get_gcode()
+        feeds = [c.get_params()["X"] for c in cmds if c.get_movement() == "G1"]
+        self.assertGreater(len(feeds), 4)
+        self.assertAlmostEqual(feeds[-1], -0.2)
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):
