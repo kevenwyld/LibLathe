@@ -14,6 +14,9 @@ class PartoffOP(liblathe.op.base.BaseOP):
     back face), so the part keeps that face and the cut is made in the
     material on the chuck side: the reference Z is z_end() - width.
 
+    Where the part is held is up to the operator: the blade may reach past
+    the end of the stock.
+
     The plunge goes `overtravel` past the inner limit so the part comes free:
     the centreline (no pip is left), or the minimum diameter if one is set
     (the bore of a tube). If the insert's cutting depth cannot
@@ -33,11 +36,6 @@ class PartoffOP(liblathe.op.base.BaseOP):
         if w <= 0:
             raise ValueError("Parting tool width must be greater than zero")
         self.z_ref = self.z_end() - w
-        if self.z_ref < self.stock.z_min - 1e-6:
-            raise ValueError(
-                "Parting off at Z %.3f needs the blade's width (%.3f) of stock behind the part's back face, "
-                "but the stock ends at Z %.3f: the blade would cut past the end of the stock (toward the chuck)"
-                % (self.z_end(), w, self.stock.z_min))
         r_outer = -self.x_outer()
         self.r_start = r_outer + self.clearance
         # past the inner limit by the overtravel: the centreline, or the

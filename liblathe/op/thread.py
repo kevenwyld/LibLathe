@@ -121,7 +121,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
     def _check_clearance(self, depth):
         """
         Keep the insert clear of the part outside the thread (external
-        threads). In front of the thread every pass runs in from the lead-in
+        threads). Only the part is checked: where it is held (the chuck, a
+        collet, a fixture) is up to the operator, not assumed from the stock. In front of the thread every pass runs in from the lead-in
         at depth, so nothing there may stand above the deepest pass's tip.
         Behind the thread's end the insert's chuck-side flank stops: its
         profile (tool_angle) rises from the tip up to its half width
@@ -133,10 +134,6 @@ class ThreadOP(liblathe.op.base.BaseOP):
         slope = math.tan(math.radians(self.tool_angle / 2)) if self.tool_angle > 0 else 0.0
         front, back = self.z_front, self.z_back
         latest_end = None        # the highest Z the thread must end at to clear what is behind it
-        # the end of the stock is held (the chuck, or the spindle): the insert's
-        # flank stops half its width behind the tip
-        if half > 0 and back - half < self.stock.z_min - 1e-6:
-            latest_end = self.stock.z_min + half
         proud_front = None       # the part above the root in front of the thread
         for seg in self.part_segment_group.get_segments():
             for x, z in _sample(seg, 0.05):
@@ -163,11 +160,6 @@ class ThreadOP(liblathe.op.base.BaseOP):
         if latest_end is not None:
             # round the suggestion the safe way (up), so using it clears
             latest_end = math.ceil(latest_end * 1000 - 1e-6) / 1000
-            if latest_end <= self.stock.z_min + half + 1e-6 and back - half < self.stock.z_min - 1e-6:
-                raise ValueError(
-                    "The thread runs to Z %.3f, but the stock ends (where it is held) at Z %.3f: the insert's flank "
-                    "would reach %.3f past the tip into the chuck. End the thread at Z %.3f or above (a thread "
-                    "length of at most %.3f)" % (back, self.stock.z_min, half, latest_end, front - latest_end))
             raise ValueError(
                 "The insert would hit the part behind the end of the thread (at Z %.3f): end the thread at "
                 "Z %.3f or above (a thread length of at most %.3f), or cut a relief groove there"
