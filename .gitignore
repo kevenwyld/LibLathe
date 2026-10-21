@@ -106,3 +106,6 @@ venv.bak/
 #ide
 .vscode
 *.FCStd1
+
+# written by liblathe.base.plot (tests/test_plot.py) in the current folder
+image1.jpg
