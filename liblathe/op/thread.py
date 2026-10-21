@@ -33,9 +33,9 @@ class ThreadOP(liblathe.op.base.BaseOP):
 
     `passes` sets how many infeed passes reach the full depth (0: the
     recommended number for the pitch), unless first_depth is given.
-    Passes get deeper by constant area by default: pass n is
-    first_depth * n ** (1 / degression) deep (degression 2 is constant area,
-    1 is constant depth), never less than min_depth deeper than the pass
+    Pass n is first_depth * n ** (1 / degression) deep: degression 1.5 (the
+    default) is a gentle schedule with a light first pass, 2 constant area
+    (the first pass deepest), 1 constant depth; never less than min_depth deeper than the pass
     before, the last at the full depth, followed by spring_passes at the full
     depth. Each pass is shifted along the cut (toward the chuck) by its depth
     times tan(infeed_angle), so the leading flank does the cutting (29.5 is
@@ -56,7 +56,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
     passes = 0               # infeed passes to full depth; 0: recommended for the pitch
     first_depth = 0.0        # 0: from the number of passes
     min_depth = 0.05
-    degression = 2.0
+    degression = 1.5
     infeed_angle = 29.5
     spring_passes = 1
     lead_in = 0.0            # 0: three pitches
