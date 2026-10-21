@@ -35,7 +35,6 @@ GPL-2, as the original (see LICENSE).
 ![Parting Example](docs/source/LL_static/images/PartingOp.jpeg)
 
 ## Links
-* Documentation sources (Sphinx): [docs/](docs/)
 * FreeCAD discussion: https://forum.freecad.org/viewtopic.php?f=15&t=30563&p=253115#p253115
 * CNC: https://en.wikipedia.org/wiki/Numerical_control
 * GCode: https://en.wikipedia.org/wiki/G-code
