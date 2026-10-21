@@ -59,6 +59,10 @@ class test_PartoffOP(unittest.TestCase):
         params['stock_to_leave'] = 0
         params['hfeed'] = self.hfeed
         params['vfeed'] = 10
+        # a parting blade: 3 wide, 0.3 corners, reaching 30 deep
+        params['groove_width'] = 3
+        params['corner_radius'] = 0.3
+        params['cutting_depth'] = 30
 
         self.op = PartoffOP()
         self.op.set_params(params)
@@ -83,14 +87,10 @@ class test_PartoffOP(unittest.TestCase):
             # check the command movement contains the a 'G'
             self.assertTrue(command.get_movement().startswith("G"))
 
-            if command.get_movement() in ["G0", "G1", "G2", "G3"]:
-                # check command has feed rate
-                feed_exists = True if "F" in command.get_params() else False
-                self.assertTrue(feed_exists)
-
-                # check the feed rate
-                if feed_exists:
-                    self.assertEqual(command.get_params()['F'], self.hfeed)
+            # rapids carry no feed; the plunge carries a feed
+            if command.get_movement() in ["G1", "G2", "G3"]:
+                self.assertIn("F", command.get_params())
+                self.assertIn(command.get_params()['F'], (self.hfeed, self.op.vfeed))
 
 
 if __name__ == '__main__':

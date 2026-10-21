@@ -88,14 +88,12 @@ class test_ProfileOP(unittest.TestCase):
             # check the command movement contains the a 'G'
             self.assertTrue(command.get_movement().startswith("G"))
 
-            if command.get_movement() in ["G0", "G1", "G2", "G3"]:
-                # check command has feed rate
-                feed_exists = True if "F" in command.get_params() else False
-                self.assertTrue(feed_exists)
-
-                # check the feed rate
-                if feed_exists:
-                    self.assertEqual(command.get_params()['F'], self.hfeed)
+            # rapids (the safe start and end, retracts) carry no feed; feed
+            # moves carry the horizontal feed, or the vertical feed going
+            # into the cut
+            if command.get_movement() in ["G1", "G2", "G3"]:
+                self.assertIn("F", command.get_params())
+                self.assertIn(command.get_params()['F'], (self.hfeed, self.op.vfeed))
 
 
 if __name__ == '__main__':
