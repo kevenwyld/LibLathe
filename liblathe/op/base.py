@@ -57,6 +57,10 @@ class BaseOP:
         # 0 enters radially. None: worked out (see lead_in_length). (Not
         # lead_in: the thread op has its own, along its thread.)
         self.pass_lead_in = None
+        # clip the outer side too (boring, in the mirrored space: beyond the
+        # stock's top is the hole, the axis and the material past a blind
+        # bore's bottom, not air)
+        self.clip_outer = False
 
         self.leadin_angle = 270
         self.leadout_angle = 315
@@ -324,7 +328,7 @@ class BaseOP:
         """
         inf = float("inf")
         d = 2 * self.nose_radius()
-        x_min = self.x_outer() + d if self.x_outer() > self.stock.x_min + 1e-6 else -inf
+        x_min = self.x_outer() + d if (self.clip_outer or self.x_outer() > self.stock.x_min + 1e-6) else -inf
         x_max = self.x_inner() if self.min_dia > 0 else inf
         z_min = self.z_end()
         z_max = self.z_start() if self.starts_in_stock() else inf
