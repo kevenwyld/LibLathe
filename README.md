@@ -1,8 +1,25 @@
-# LibLathe [![Python package](https://github.com/dubstar-04/LibLathe/workflows/Python%20package/badge.svg?branch=master)](https://github.com/dubstar-04/LibLathe/actions) [![codecov](https://codecov.io/gh/dubstar-04/LibLathe/branch/master/graph/badge.svg?token=08V04GX1FK)](https://codecov.io/gh/dubstar-04/LibLathe/branch/master/)
+# LibLathe (fork)
 
-LibLathe is an opensource standalone python library for generating lathe paths and gcode for use with cnc lathes.
+| :warning: WARNING: LibLathe is experimental. Check every program in a simulator, and with care on the machine, before cutting. |
 
-| :warning: WARNING: LibLathe is currently experimental / Proof of concept and only suitable for testing. |
+LibLathe is an open source, standalone Python library for generating lathe
+paths and G-code for CNC lathes.
+
+This is a fork of [LibLathe](https://github.com/dubstar-04/LibLathe) by
+**Daniel Wood** ([dubstar-04](https://github.com/dubstar-04)), maintained for
+the [Turning Addon fork](https://github.com/kevenwyld/TurningAddon). It adds
+boring, threading to standard tolerance classes, grooving strategies, insert
+outline collision checks and a regression test suite.
+
+## Credits
+* **Daniel Wood** ([dubstar-04](https://github.com/dubstar-04)): original
+  author.
+* **Brett Parker**: contributions.
+* **Keven Wyld** ([kevenwyld](https://github.com/kevenwyld)): maintainer of
+  this fork.
+
+## Licence
+GPL-2, as the original (see LICENSE).
 
 ## Examples 
 ### Facing:
