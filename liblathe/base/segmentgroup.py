@@ -248,7 +248,9 @@ class SegmentGroup:
         """
         The contour grown by a rectangle: sx in X (radially, away from the
         axis) and sz in Z (both ways along the axis), returned as a polyline
-        from the front (on the axis) to the contour's last Z.
+        from the front (on the axis) to the contour's last Z. Negative values
+        shrink it instead (faces move into the part, diameters toward the
+        axis, not past it).
 
         The contour must be a profile seen from outside the part (one radius
         per Z, faces as vertical steps), as the defeatured part and its
@@ -274,12 +276,20 @@ class SegmentGroup:
             i = int(round((z - start) / resolution))
             if 0 <= i < n and -x > prof[i]:
                 prof[i] = -x
-        k_max = int(math.ceil(sz / resolution))
+        # a negative sx or sz shrinks the contour instead (a negative stock to
+        # leave: cutting under the model's size): along Z the radius is the
+        # smallest of its neighbours rather than the largest, and radii stop
+        # at the axis
+        k_max = int(math.ceil(abs(sz) / resolution))
+        pick = np.maximum if sz >= 0 else np.minimum
         grown = prof.copy()
         for k in range(1, k_max + 1):
-            grown[k:] = np.maximum(grown[k:], prof[:-k])
-            grown[:-k] = np.maximum(grown[:-k], prof[k:])
+            grown[k:] = pick(grown[k:], prof[:-k])
+            grown[:-k] = pick(grown[:-k], prof[k:])
         grown = grown + sx
+        if sx < 0 or sz < 0:
+            finite = np.isfinite(grown)
+            grown[finite] = np.maximum(grown[finite], 0.0)
         guard = grown.copy()
         guard[1:] = np.maximum(guard[1:], grown[:-1])
         guard[:-1] = np.maximum(guard[:-1], grown[1:])

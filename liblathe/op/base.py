@@ -4,6 +4,10 @@ from liblathe.base.segment import Segment
 from liblathe.base.segmentgroup import SegmentGroup
 
 
+# grid for the rectangle dilation when it cuts under the model's size
+FINE = 0.001
+
+
 class BaseOP:
     """Base class for all turning operations."""
 
@@ -59,6 +63,21 @@ class BaseOP:
         sz = self.stock_to_leave if self.stock_to_leave_z is None else self.stock_to_leave_z
         return float(sx), float(sz)
 
+    def target_outline(self):
+        """
+        The surface the operation may cut to: the part, or with a negative
+        stock to leave (cutting under the model's size, e.g. a thread's major
+        diameter turned to its tolerance) the part shrunk by it. The checks
+        that a path stays clear of the part use this.
+        """
+        sx, sz = self.stock_xz()
+        nx, nz = min(sx, 0.0), min(sz, 0.0)
+        if nx == 0 and nz == 0:
+            return self.part_segment_group
+        if abs(nx - nz) < 1e-9:
+            return self.part_segment_group.offset_path(nx)
+        return self.part_segment_group.dilate_rect(nx, nz, resolution=FINE)
+
     def offset_contour(self, segmentgroup, extra=0.0):
         """
         Offset a contour (e.g. the defeatured part) by the stock to leave,
@@ -72,6 +91,11 @@ class BaseOP:
         sx, sz = sx + extra, sz + extra
         if abs(sx - sz) < 1e-9:
             return segmentgroup.offset_path(sx)
+        # the grid errs outward by a step or two, which is fine for stock left
+        # on; cutting under size (a negative stock) is a finished dimension,
+        # so a finer grid there
+        if sx < 0 or sz < 0:
+            return segmentgroup.dilate_rect(sx, sz, resolution=FINE)
         return segmentgroup.dilate_rect(sx, sz)
 
     def z_start(self):
@@ -202,7 +226,7 @@ class BaseOP:
         contour is inside the window.
         """
         # use a small offset to reduce false positives
-        if segmentgroup.intersects_group(self.part_segment_group.offset_path(-0.001)):
+        if segmentgroup.intersects_group(self.target_outline().offset_path(-0.001)):
             raise ValueError(error)
         # tool nose radius compensation (imaginary tip programming)
         segmentgroup = self.nose_compensate(segmentgroup)

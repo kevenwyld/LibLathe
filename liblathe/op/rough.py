@@ -45,7 +45,8 @@ class RoughOP(liblathe.op.base.BaseOP):
         # imaginary tip itself may lie inside the outline where the nose
         # touches a slope or an arc.
         r_nose = getattr(self.tool, "nose_radius", 0) or 0 if self.nose_comp else 0
-        check_group = self.part_segment_group.offset_path(r_nose - 0.005) if r_nose > 0.005 else self.part_segment_group
+        target = self.target_outline()
+        check_group = target.offset_path(r_nose - 0.005) if r_nose > 0.005 else target
         # define the x limit for roughing
         x_min = -abs(math.ceil(self.stock.x_length() + self.extra_dia * 0.5))
 

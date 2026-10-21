@@ -372,13 +372,23 @@ class _Blade:
 
 
 def _dilate_rect(profile, sx, sz, dz):
-    """Grow the profile by a rectangle: sz either way along Z, then sx radially."""
+    """
+    Grow the profile by a rectangle: sz either way along Z, then sx
+    radially. Negative values shrink it (a negative stock to leave, cutting
+    under the model's size): along Z the smallest neighbour rather than the
+    largest, and radii stop at the axis.
+    """
     vals = profile.values
     out = vals.copy()
-    for k in range(1, int(math.ceil(max(sz, 0.0) / dz - 1e-9)) + 1):
-        out[k:] = np.maximum(out[k:], vals[:-k])
-        out[:-k] = np.maximum(out[:-k], vals[k:])
-    return _Profile(profile.start, dz, out + max(sx, 0.0))
+    pick = np.maximum if sz >= 0 else np.minimum
+    for k in range(1, int(math.ceil(abs(sz) / dz - 1e-9)) + 1):
+        out[k:] = pick(out[k:], vals[:-k])
+        out[:-k] = pick(out[:-k], vals[k:])
+    out = out + sx
+    if sx < 0 or sz < 0:
+        finite = np.isfinite(out)
+        out[finite] = np.maximum(out[finite], 0.0)
+    return _Profile(profile.start, dz, out)
 
 
 def _edge_height(u, w, r):
