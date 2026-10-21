@@ -133,15 +133,19 @@ class ThreadOP(liblathe.op.base.BaseOP):
         slope = math.tan(math.radians(self.tool_angle / 2)) if self.tool_angle > 0 else 0.0
         front, back = self.z_front, self.z_back
         latest_end = None        # the highest Z the thread must end at to clear what is behind it
+        # the end of the stock is held (the chuck, or the spindle): the insert's
+        # flank stops half its width behind the tip
+        if half > 0 and back - half < self.stock.z_min - 1e-6:
+            latest_end = self.stock.z_min + half
+        proud_front = None       # the part above the root in front of the thread
         for seg in self.part_segment_group.get_segments():
             for x, z in _sample(seg, 0.05):
                 r = -x
                 if r <= tip + 1e-6:
                     continue
                 if front + 1e-6 < z <= self.z_drive + half:
-                    raise ValueError(
-                        "The thread's passes run into the part in front of the thread (radius %.3f at Z %.3f): "
-                        "check the selection or shorten the lead-in" % (r, z))
+                    proud_front = z if proud_front is None else max(proud_front, z)
+                    continue
                 # behind the end, the insert's flank cutting into the thread's
                 # own diameter is just how the thread ends; only part standing
                 # proud of that diameter (a shoulder) can be hit
@@ -150,9 +154,20 @@ class ThreadOP(liblathe.op.base.BaseOP):
                     end = z + min((r - tip) * slope, half)
                     if end > back + 1e-6 and (latest_end is None or end > latest_end):
                         latest_end = end
+        if proud_front is not None:
+            raise ValueError(
+                "In front of the thread the part stands above the thread's root (radius %.3f) from Z %.3f to "
+                "Z %.3f. Every pass starts in front of the thread at its depth and would cut into it, whatever "
+                "the lead-in: a single-point thread needs the part in front of it below the root (a chamfer or "
+                "a relief groove)" % (tip, front, proud_front))
         if latest_end is not None:
             # round the suggestion the safe way (up), so using it clears
             latest_end = math.ceil(latest_end * 1000 - 1e-6) / 1000
+            if latest_end <= self.stock.z_min + half + 1e-6 and back - half < self.stock.z_min - 1e-6:
+                raise ValueError(
+                    "The thread runs to Z %.3f, but the stock ends (where it is held) at Z %.3f: the insert's flank "
+                    "would reach %.3f past the tip into the chuck. End the thread at Z %.3f or above (a thread "
+                    "length of at most %.3f)" % (back, self.stock.z_min, half, latest_end, front - latest_end))
             raise ValueError(
                 "The insert would hit the part behind the end of the thread (at Z %.3f): end the thread at "
                 "Z %.3f or above (a thread length of at most %.3f), or cut a relief groove there"
@@ -189,7 +204,9 @@ class ThreadOP(liblathe.op.base.BaseOP):
         for x, z in self.passes:
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
-            cmds.append(Command('G33', {'Z': self.z_back, 'K': self.pitch}))
+            # X too, although it does not change: G33 is not a modal move to
+            # every path display, which then draws it from X0
+            cmds.append(Command('G33', {'X': x, 'Z': self.z_back, 'K': self.pitch}))
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_back}))
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
         return cmds
