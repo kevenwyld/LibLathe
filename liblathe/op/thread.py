@@ -138,7 +138,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
         for seg in self.part_segment_group.get_segments():
             for x, z in _sample(seg, 0.05):
                 r = -x
-                if r <= tip + 1e-6:
+                if r <= tip + 1e-3:
                     continue
                 if front + 1e-6 < z <= self.z_drive + half:
                     proud_front = z if proud_front is None else max(proud_front, z)
@@ -146,7 +146,9 @@ class ThreadOP(liblathe.op.base.BaseOP):
                 # behind the end, the insert's flank cutting into the thread's
                 # own diameter is just how the thread ends; only part standing
                 # proud of that diameter (a shoulder) can be hit
-                if half > 0 and back - half - 1e-6 <= z <= back + 1e-6 and r > self.thread_radius + 1e-6:
+                # (a micron's tolerance: the outline comes from a section of the
+                # solid, and its corners are not exactly on the thread's radius)
+                if half > 0 and back - half - 1e-6 <= z <= back + 1e-6 and r > self.thread_radius + 1e-3:
                     # the flank is (r - tip) * slope behind the tip at height r
                     end = z + min((r - tip) * slope, half)
                     if end > back + 1e-6 and (latest_end is None or end > latest_end):
