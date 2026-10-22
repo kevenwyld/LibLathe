@@ -167,9 +167,13 @@ class GrooveOP(liblathe.op.base.BaseOP):
         t_depth = float(self.turning_depth or 0.0)
         if self.strategy == "side_turn":
             self._side_turn(rough, z_ref, r_outer, w, t_depth, geo)
-            # what the traverses could not reach (stretches too short for one,
-            # under half the blade's width): plunged as usual
+            # what the traverses could not reach (a groove the blade
+            # practically fills): plunged as usual, and said so
             open_ = open_ & (geo.touch(z_ref) > rough + allowance + 0.05)
+            for a, b in _runs(open_):
+                self.warnings.append(
+                    "Side-turn: Z %.3f to %.3f is plunged, not side-turned: the groove there is barely wider than "
+                    "the blade (%.3f)" % (z_ref[a] + w, z_ref[b], w))
         for a, b in _runs(open_):
             za, zb = z_ref[a], z_ref[b]
             n = int(math.ceil((za - zb) / spacing - 1e-9)) if za > zb else 0
@@ -245,9 +249,9 @@ class GrooveOP(liblathe.op.base.BaseOP):
         Roughing in levels: from the outer limit down by step_down at a time
         (to the rough profile), a traverse along Z at each level over every
         stretch where it removes material, alternating direction so the next
-        level starts where this one ended. A stretch shorter than half the
-        blade width (a groove under about 1.5 blade widths) is left to
-        plunges: a traverse there is little more than a plunge.
+        level starts where this one ended. Only a stretch shorter than a tenth
+        of the blade width (a groove the blade practically fills) is left to
+        plunges, and the op says so (see generate_path).
         """
         step = float(self.step_down) if self.step_down and self.step_down > 0 else (
             0.9 * t_depth if t_depth > 0 else 0.5 * w)
@@ -260,7 +264,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
             level = max(level - step, floor)
             path = np.maximum(rough, level)
             cuts = path < geo.touch(z_ref) - 1e-6
-            runs = [(a, b) for a, b in _runs(cuts) if z_ref[a] - z_ref[b] >= 0.5 * w - 1e-9]
+            runs = [(a, b) for a, b in _runs(cuts) if z_ref[a] - z_ref[b] >= SIDE_TURN_MIN * w - 1e-9]
             if not forward:
                 runs = runs[::-1]
             for a, b in runs:
@@ -374,6 +378,11 @@ class _Profile:
         ok = (i >= 0) & (i < len(self.values))
         out[ok] = self.values[i[ok]]
         return out
+
+
+# Side-turn traverses a stretch at least this many blade widths long (the
+# groove at least 1.1 blade widths wide); shorter ones are plunged
+SIDE_TURN_MIN = 0.1
 
 
 def _runs(mask):

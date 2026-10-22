@@ -161,6 +161,27 @@ class test_GrooveStrategies(unittest.TestCase):
     def test_side_turn_no_gouge(self):
         self.assertGreater(test_Groove._clearance(test_Groove(), {"strategy": "side_turn", "turning_depth": 1.5}), -1e-4)
 
+    def _narrow(self, width):
+        """A 6 mm wide window (Z -2 to -8) on the shoulder part, a blade of the given width."""
+        op = R.make_op("groove", "shoulder", {"groove_width": width, "corner_radius": 0.3, "cutting_depth": 10,
+                                              "turning_depth": 1.0, "strategy": "side_turn", "start_offset": -2.0,
+                                              "end_offset": -22.0, "stock_to_leave": 0})
+        op.get_gcode()
+        return op
+
+    def test_side_turn_narrow_groove(self):
+        """A groove about 1.5 blade widths wide is side-turned, not quietly plunged."""
+        op = self._narrow(4.05)
+        self.assertTrue(op.rough_paths)
+        self.assertEqual(op.plunges, [])
+        self.assertEqual(op.warnings, [])
+
+    def test_side_turn_falls_back_with_a_warning(self):
+        """A groove the blade practically fills is plunged, and the op says so."""
+        op = self._narrow(5.6)
+        self.assertTrue(op.plunges)
+        self.assertTrue(any(w.startswith("Side-turn:") and "plunged" in w for w in op.warnings))
+
     def test_pecking(self):
         """Pecks of peck_depth from the stock's top, backing off peck_retract, to the floor."""
         op = R.make_op("groove", "groove", dict(self.BLADE, peck_depth=2.0))
