@@ -176,6 +176,14 @@ class test_GrooveStrategies(unittest.TestCase):
         self.assertEqual(op.plunges, [])
         self.assertEqual(op.warnings, [])
 
+    def test_side_turn_traverses_stay_at_their_level(self):
+        """A flat-floored groove: each traverse runs at its level end to end, with no
+        climb along the blade's corner radius at its ends (a wiggle grazing the top)."""
+        op = self._narrow(4.05)
+        for pts in op.rough_paths:
+            xs = [x for x, z in pts]
+            self.assertAlmostEqual(max(xs), min(xs), places=6)
+
     def test_side_turn_falls_back_with_a_warning(self):
         """A groove the blade practically fills is plunged, and the op says so."""
         op = self._narrow(5.6)

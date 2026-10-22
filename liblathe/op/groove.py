@@ -170,6 +170,12 @@ class GrooveOP(liblathe.op.base.BaseOP):
             # what the traverses could not reach (a groove the blade
             # practically fills): plunged as usual, and said so
             open_ = open_ & (geo.touch(z_ref) > rough + allowance + 0.05)
+            # the corner pockets the traverses leave by the walls (within a
+            # corner radius) are the finish's: not plunged, not reported
+            reach = float(self.corner_radius or 0.0) + 2 * dz
+            for a, b in _runs(open_):
+                if z_ref[a] - z_ref[b] <= reach + 1e-9:
+                    open_[a:b + 1] = False
             for a, b in _runs(open_):
                 self.warnings.append(
                     "Side-turn: Z %.3f to %.3f is plunged, not side-turned: the groove there is barely wider than "
@@ -258,6 +264,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
         if t_depth > 0 and step > t_depth + 1e-9:
             self.warnings.append("The step down (%.3f) is more than the tool's turning depth (%.3f)" % (step, t_depth))
         floor = float(np.min(rough))
+        corner = float(self.corner_radius or 0.0)
+        dz = abs(z_ref[0] - z_ref[1]) if len(z_ref) > 1 else 0.0
         level, forward, k = r_outer, True, 0
         while level > floor + 1e-6 and k < 10000:
             k += 1
@@ -268,6 +276,20 @@ class GrooveOP(liblathe.op.base.BaseOP):
             if not forward:
                 runs = runs[::-1]
             for a, b in runs:
+                # by a wall the floor rises along the blade's corner radius
+                # (within a corner radius of the wall): following it up there
+                # is a wiggle grazing the top with next to nothing to cut, so
+                # the traverse starts and ends where it is down at its level
+                # (the finish follows the walls). A sloped or curved floor
+                # further from the ends is still followed.
+                reach = corner + 2 * dz
+                a0, b0 = a, b
+                while a < b and path[a] > level + 1e-6 and z_ref[a0] - z_ref[a] <= reach:
+                    a += 1
+                while b > a and path[b] > level + 1e-6 and z_ref[b] - z_ref[b0] <= reach:
+                    b -= 1
+                if z_ref[a] - z_ref[b] < SIDE_TURN_MIN * w - 1e-9:
+                    continue
                 xs, zs = path[a:b + 1], z_ref[a:b + 1]
                 pts = list(zip(xs.tolist(), zs.tolist()))
                 self.rough_paths.append(_simplify(pts if forward else pts[::-1], 0.0005))
@@ -330,13 +352,25 @@ class GrooveOP(liblathe.op.base.BaseOP):
         r_clear = min(-self.x_outer() + 0.5, r_retract)
         # side-turning levels: a level that starts where the last one ended
         # (alternating direction) steps straight down instead of retracting
-        last = None
+        last, last_span = None, None
         for i, pts in enumerate(self.rough_paths):
             if not pts:
                 continue
             x, z = pts[0]
-            if last is not None and abs(last[1] - z) < 1e-6 and x <= last[0] + 1e-9:
+            span = (min(p[1] for p in pts), max(p[1] for p in pts))
+            deeper = last is not None and x <= last[0] + 1e-9
+            if deeper and abs(last[1] - z) < 1e-6:
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+            elif deeper and last_span[0] - 1e-6 <= z <= last_span[1] + 1e-6:
+                # starts within what the last level cut: along it (air) to
+                # here, then down
+                cmds.append(Command('G1', {'X': last[0], 'Z': z, 'F': self.hfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+            elif deeper and span[0] - 1e-6 <= last[1] <= span[1] + 1e-6:
+                # a wider level: down where the last ended, out along this
+                # level (its own material) to where it starts
+                cmds.append(Command('G1', {'X': x, 'Z': last[1], 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
             else:
                 if last is not None:
                     if last[0] < r_clear:
@@ -346,7 +380,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
             for x, z in pts[1:]:
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
-            last = pts[-1]
+            last, last_span = pts[-1], span
         if last is not None:
             if last[0] < r_clear:
                 cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': self.vfeed}))
