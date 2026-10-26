@@ -9,6 +9,7 @@ from liblathe.base.segmentgroup import SegmentGroup
 class FaceOP(liblathe.op.base.BaseOP):
 
     checks_tool_outline = True
+    breaks_edges = True
 
     def generate_path(self):
         """Generate the path for the profile operation"""
@@ -39,6 +40,31 @@ class FaceOP(liblathe.op.base.BaseOP):
             segmentgroup.add_segment(leadout)
             z_pos += self.step_over
             self.clearing_paths.append(segmentgroup)
+
+        self.add_front_chamfer(part_boundbox)
+
+    def add_front_chamfer(self, part_boundbox):
+        """
+        With edge breaking, the front corner (the face meeting the diameter)
+        is chamfered: the facing passes go straight across the face, so a
+        short contour pass follows the broken outline round the corner (a
+        millimetre of the face, the chamfer, a millimetre of the diameter),
+        last.
+        """
+        front = part_boundbox.z_max
+        corner = [p for p in self.edges_broken if abs(p.Z - front) < 1e-4]
+        if not corner:
+            return
+        p, size = corner[0], float(self.break_edges)
+        inf = float("inf")
+        piece = self.part_segment_group.clip_to_box(-inf, p.X + size + 1.0, p.Z - size - 1.0, inf)
+        if not piece.count():
+            return
+        contour = self.offset_contour(piece)
+        path = self.contour_path(contour, "Calculated chamfer path intersects part")
+        if path is not None:
+            # clearing paths are emitted in reverse order: the chamfer last
+            self.clearing_paths.insert(0, path)
 
     def generate_gcode(self):
         """Generate Gcode for the op segments"""

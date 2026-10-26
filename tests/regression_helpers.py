@@ -24,13 +24,15 @@ import liblathe.op.face
 import liblathe.op.partoff
 import liblathe.op.groove
 import liblathe.op.thread
+import liblathe.op.chamfer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OPS = {"rough": liblathe.op.rough.RoughOP, "profile": liblathe.op.profile.ProfileOP,
        "face": liblathe.op.face.FaceOP, "partoff": liblathe.op.partoff.PartoffOP,
-       "groove": liblathe.op.groove.GrooveOP, "thread": liblathe.op.thread.ThreadOP}
+       "groove": liblathe.op.groove.GrooveOP, "thread": liblathe.op.thread.ThreadOP,
+       "chamfer": liblathe.op.chamfer.ChamferOP}
 # the ops that take a turning insert (the others carry their tool in params)
-TURNING = ("rough", "profile", "face")
+TURNING = ("rough", "profile", "face", "chamfer")
 DEFAULTS = {'step_over': 1.0, 'finish_passes': 2, 'stock_to_leave': 0, 'clearance': 3, 'min_dia': 0,
             'extra_dia': 0, 'hfeed': 200, 'vfeed': 100, 'start_offset': 0, 'end_offset': 0,
             'allow_grooving': False}

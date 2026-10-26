@@ -246,6 +246,59 @@ class test_ThreadRunOut(unittest.TestCase):
             self._op(run_out=25.0).get_gcode()
 
 
+class test_EdgeBreak(unittest.TestCase):
+    """Break edges: every sharp outside corner chamfered (the shoulder part: the
+    front corner at radius 6, Z 0, and the shoulder's outer edge at radius 8,
+    Z -20; its inside corner at radius 6, Z -20 and the back end are left)."""
+
+    def _diagonals(self, op):
+        out, prev = [], None
+        for mv, x, z in R.moves(op.get_gcode()):
+            if mv == "G1" and prev is not None and abs(x - prev[0]) > 1e-3 and abs(z - prev[1]) > 1e-3:
+                out.append((prev, (x, z)))
+            prev = (x, z)
+        return out
+
+    def test_corners_found(self):
+        op = R.make_op("profile", "shoulder", {"stock_to_leave": 0, "break_edges": 0.5})
+        op.get_gcode()
+        self.assertEqual(sorted((round(p.X, 3), round(p.Z, 3)) for p in op.edges_broken), [(-8.0, -20.0), (-6.0, 0.0)])
+
+    def test_profile_rough_face(self):
+        """45 degree moves (the chamfers) in Profile's finish, Rough's cleanup and Face's
+        corner pass; none without breaking."""
+        for opname, extra in (("profile", {}), ("rough", {"cleanup_pass": True}), ("face", {})):
+            with self.subTest(op=opname):
+                base = dict({"stock_to_leave": 0}, **extra)
+                plain = [d for d in self._diagonals(R.make_op(opname, "shoulder", base))
+                         if abs(abs(d[1][0] - d[0][0]) - abs(d[1][1] - d[0][1])) < 0.02 and abs(d[0][1]) < 0.01]
+                broken = [d for d in self._diagonals(R.make_op(opname, "shoulder", dict(base, break_edges=0.5)))
+                          if abs(abs(d[1][0] - d[0][0]) - abs(d[1][1] - d[0][1])) < 0.02 and abs(d[0][1]) < 0.01]
+                self.assertEqual(plain, [])
+                self.assertTrue(broken)
+
+
+class test_Chamfer(unittest.TestCase):
+
+    def _op(self, corners):
+        op = R.make_op("chamfer", "shoulder", {"stock_to_leave": 0, "corners": corners})
+        return op, op.get_gcode()
+
+    def test_chamfer_and_fillet(self):
+        op, cmds = self._op([(6.0, 0.0, "chamfer", 0.5), (8.0, -20.0, "fillet", 1.0)])
+        self.assertEqual(sorted(op.corners_done), [(6.0, 0.0), (8.0, -20.0)])
+        self.assertEqual(op.warnings, [])
+        arcs = [c for c in cmds if c.get_movement() in ("G2", "G3")]
+        self.assertEqual(len(arcs), 1)     # the fillet (with the nose: radius 1.4)
+        self.assertAlmostEqual(abs(arcs[0].get_params()["K"]), 1.4, places=3)
+
+    def test_refused(self):
+        op, _ = self._op([(6.0, -20.0, "chamfer", 0.5), (7.0, -10.0, "chamfer", 0.5)])
+        self.assertEqual(op.corners_done, [])
+        self.assertTrue(any("inside corner" in w for w in op.warnings))
+        self.assertTrue(any("No sharp corner" in w for w in op.warnings))
+
+
 class test_Partoff(unittest.TestCase):
 
     def test_past_the_centre(self):

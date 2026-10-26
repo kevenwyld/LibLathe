@@ -61,6 +61,11 @@ class BaseOP:
         # stock's top is the hole, the axis and the material past a blind
         # bore's bottom, not air)
         self.clip_outer = False
+        # edge breaking: every sharp outside corner of the part chamfered by
+        # this much (0: off), for the operations that do it (breaks_edges)
+        self.break_edges = 0.0
+        # the corners broken, as Points (for the caller to report)
+        self.edges_broken = []
 
         self.leadin_angle = 270
         self.leadout_angle = 315
@@ -179,11 +184,27 @@ class BaseOP:
                 'finish_passes': self.finish_passes, 'stock_to_leave': self.stock_to_leave, 'hfeed': self.hfeed, 
                 'vfeed': self.vfeed, 'clearance': self.clearance}
 
+    # operations whose finishing follows the part's outline, so its corners
+    # can be broken (Rough's cleanup pass, Profile, Face)
+    breaks_edges = False
+
+    def apply_edge_break(self):
+        """With break_edges set, the part's outline with its sharp outside
+        corners chamfered: the operation then cuts (and checks against) that."""
+        self.edges_broken = []
+        size = float(self.break_edges or 0.0)
+        if not self.breaks_edges or size <= 0 or not self.part_segment_group.count():
+            return
+        from liblathe.base import corners
+        z_min = self.part_segment_group.boundbox().z_min
+        self.part_segment_group, self.edges_broken = corners.break_edges(self.part_segment_group, size, z_min=z_min)
+
     def get_gcode(self):
         """Base function for all turning operations"""
 
         if self.needs_tool and self.tool is None:
             raise Warning("Tool is unset")
+        self.apply_edge_break()
         # an unset (zero) vertical feed would put F0 on the moves into the
         # cut; use the horizontal feed for them instead
         if not self.vfeed or self.vfeed <= 0:
