@@ -20,8 +20,12 @@ class FaceOP(liblathe.op.base.BaseOP):
         # the nose's round uncut at the inner edge (the nub at the centre)
         r_nose = getattr(self.tool, "nose_radius", 0) or 0 if self.nose_comp else 0
         x_max = 0 - self.min_dia * 0.5 + r_nose
-        z_min = part_boundbox.z_max + self.stock_xz()[1]
+        # face down to face_z (a selected face, or Back set by hand), or the
+        # part's front
+        face = part_boundbox.z_max if self.face_z is None else float(self.face_z)
+        z_min = face + self.stock_xz()[1]
         z_max = self.stock.z_max + self.start_offset
+        self.check_faced_part(z_min, z_max)
 
         self.clearing_paths = []
 
@@ -41,9 +45,41 @@ class FaceOP(liblathe.op.base.BaseOP):
             z_pos += self.step_over
             self.clearing_paths.append(segmentgroup)
 
-        self.add_front_chamfer(part_boundbox)
+        self.add_front_chamfer(part_boundbox, face)
 
-    def add_front_chamfer(self, part_boundbox):
+    def part_radius_above(self, z_lo, z_hi):
+        """The part's largest radius between z_lo and z_hi (its outline's
+        segments there, lines exactly, arcs by their end points and middle)."""
+        best = 0.0
+        for seg in self.part_segment_group.get_segments():
+            pts = [seg.start, seg.end]
+            if seg.bulge:
+                pts.append(seg.start.lerp(seg.end, 0.5))
+            lo, hi = min(seg.start.Z, seg.end.Z), max(seg.start.Z, seg.end.Z)
+            if hi < z_lo - 1e-9 or lo > z_hi + 1e-9:
+                continue
+            for p in pts:
+                if z_lo - 1e-9 <= p.Z <= z_hi + 1e-9:
+                    best = max(best, -p.X)
+            # a line crossing the band's ends: its radius there
+            if not seg.bulge and hi - lo > 1e-12:
+                for zz in (z_lo, z_hi):
+                    if lo <= zz <= hi:
+                        t = (zz - seg.start.Z) / (seg.end.Z - seg.start.Z)
+                        best = max(best, -(seg.start.X + t * (seg.end.X - seg.start.X)))
+        return best
+
+    def check_faced_part(self, z_min, z_max):
+        """Facing passes go in to the minimum diameter: refuse when the part
+        reaches further out than that in front of the plane faced to (e.g. a
+        shoulder faced without Min Diameter at its smaller diameter)."""
+        r_in = self.min_dia * 0.5
+        r_part = self.part_radius_above(z_min + 1e-4, z_max)
+        if r_part > r_in + 1e-4:
+            raise ValueError("Facing to Z %.3f would cut into the part (radius %.3f in front of it): set Min Diameter "
+                             "to at least %.3f" % (z_min, r_part, 2 * r_part))
+
+    def add_front_chamfer(self, part_boundbox, front=None):
         """
         With edge breaking, the front corner (the face meeting the diameter)
         is chamfered: the facing passes go straight across the face, so a
@@ -51,7 +87,7 @@ class FaceOP(liblathe.op.base.BaseOP):
         millimetre of the face, the chamfer, a millimetre of the diameter),
         last.
         """
-        front = part_boundbox.z_max
+        front = part_boundbox.z_max if front is None else front
         corner = [p for p in self.edges_broken if abs(p.Z - front) < 1e-4]
         if not corner:
             return

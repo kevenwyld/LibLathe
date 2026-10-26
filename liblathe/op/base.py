@@ -64,6 +64,8 @@ class BaseOP:
         # edge breaking: every sharp outside corner of the part chamfered by
         # this much (0: off), for the operations that do it (breaks_edges)
         self.break_edges = 0.0
+        # Face: the plane to face down to (None: the part's front)
+        self.face_z = None
         # the corners broken, as Points (for the caller to report)
         self.edges_broken = []
 

@@ -278,6 +278,24 @@ class test_EdgeBreak(unittest.TestCase):
                 self.assertTrue(broken)
 
 
+class test_FaceToPlane(unittest.TestCase):
+    """Face down to a chosen plane (face_z): the shoulder part's shoulder is at Z -20,
+    radius 6 in front of it."""
+
+    def test_shoulder_with_min_diameter(self):
+        op = R.make_op("face", "shoulder", {"stock_to_leave": 0, "face_z": -20.0, "min_dia": 12.0})
+        feeds = [(x, z) for mv, x, z in R.moves(op.get_gcode()) if mv == "G1"]
+        self.assertAlmostEqual(min(z for x, z in feeds), -20.0)
+        # the nose's centre on the minimum diameter: the tip a nose radius inside it
+        self.assertGreater(min(x for x, z in feeds), 6.0 - 0.4 - 1e-6)
+
+    def test_refused_into_the_part(self):
+        for params in ({"face_z": -20.0}, {"face_z": -1.0}):
+            with self.subTest(**params):
+                with self.assertRaises(ValueError):
+                    R.make_op("face", "shoulder", dict({"stock_to_leave": 0}, **params)).get_gcode()
+
+
 class test_Chamfer(unittest.TestCase):
 
     def _op(self, corners):
