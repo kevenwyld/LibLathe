@@ -325,6 +325,10 @@ class BaseOP:
             segmentgroup = _without_front_face(segmentgroup)
         # keep the whole nose inside the working window
         segmentgroup = segmentgroup.clip_to_box(*self.clip_box())
+        # a pass is done once it has left the stock: not round the part's
+        # outer corner in air before retracting
+        if not self.clip_outer:
+            segmentgroup = _without_air_tail(segmentgroup, self.stock.x_min)
         if not segmentgroup.count():
             return None
         self.add_leadin(segmentgroup)
@@ -437,6 +441,31 @@ class BaseOP:
         leadin = Segment(start_point, end_point)
         # add the leadin segment at the start of segment group
         segmentgroup.insert_segment(leadin, 0)
+
+
+def _without_air_tail(segmentgroup, x_air, tol=0.05):
+    """
+    The path without the segments at its end that lie wholly outside the
+    stock's radius (X below x_air, the stock's outer X; X is negative
+    internally) by more than tol: a bar's size tolerance, so a pass on or
+    near the stock's surface stays and still cleans up bar a little over
+    its nominal size. The path is the imaginary tip, the nose's point
+    nearest the axis, so there the whole nose is in air: an offset pass
+    that has run out along a shoulder past the stock would otherwise carry
+    on round the part's outer corner before retracting. The segment that
+    leaves the stock is kept, so the pass ends clear of it.
+    """
+    from liblathe.base.segmentgroup import _sample_points
+    segs = segmentgroup.get_segments()
+    n = len(segs)
+    while n > 1 and all(x < x_air - tol for x, _ in _sample_points(segs[n - 1], 0.05)):
+        n -= 1
+    if n == len(segs):
+        return segmentgroup
+    out = SegmentGroup()
+    for seg in segs[:n]:
+        out.add_segment(seg)
+    return out
 
 
 def _without_front_face(segmentgroup):
