@@ -173,16 +173,20 @@ class ThreadOP(liblathe.op.base.BaseOP):
             return lead
         tip = self.thread_radius - depth
         if room <= 1e-3:
-            raise ValueError(
+            self.refuse(
+                "thread-front-clearance",
                 "Right in front of the thread the part stands above the thread's root (radius %.3f), at Z %.3f: "
                 "every pass starts in front of the thread at its depth and would cut into it, whatever the lead-in. "
                 "A single-point thread needs the part in front of it below the root (a chamfer, a neck or a "
                 "relief groove)" % (tip, where))
+            return lead                              # waived: the lead-in as set, or three pitches
         if self.lead_in > 0:
-            raise ValueError(
+            self.refuse(
+                "thread-lead-in-too-long",
                 "The lead-in (%.3f) is longer than the room in front of the thread: the part stands above the "
                 "thread's root (radius %.3f) at Z %.3f. A lead-in of at most %.3f fits"
                 % (lead, tip, where, math.floor(room * 1000) / 1000))
+            return lead                              # waived: the lead-in as set
         room = math.floor(room * 1000) / 1000
         self.warnings.append(
             "Lead-in shortened to %.3f (from %.3f, three pitches): in front of the thread the part stands above "
@@ -223,7 +227,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
         if latest_end is not None:
             # round the suggestion the safe way (up), so using it clears
             latest_end = math.ceil(latest_end * 1000 - 1e-6) / 1000
-            raise ValueError(
+            self.refuse(
+                "thread-hits-behind-end",
                 "The insert would hit the part behind the end of the thread (at Z %.3f): end the thread at "
                 "Z %.3f or above (a thread length of at most %.3f), or cut a relief groove there"
                 % (back, latest_end, front - latest_end))

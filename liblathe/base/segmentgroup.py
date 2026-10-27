@@ -450,7 +450,7 @@ class SegmentGroup:
                 # run again with the next segment
                 self.clean_offset_path(index + 1)
 
-    def defeature(self, stock_z_min, tool, allow_grooving=False):
+    def defeature(self, stock_z_min, tool, allow_grooving=False, check=True):
         """Defeature the segment group. Remove features that cannot be turned. e.g. undercuts / grooves"""
         segments = self.get_segments()
         segs_out = SegmentGroup()
@@ -556,9 +556,11 @@ class SegmentGroup:
         # create an inset version of the part_segmentgroup
         # check if the defeatured segmentgroup intersects the part
         # TODO: This is a bit hacky. Is there a better way?
-        if self.offset_path(-0.0001).intersects_group(segs_out):
+        if check and self.offset_path(-0.0001).intersects_group(segs_out):
             # segs_out.create_freecad_shape("defeatured_part_segment_group")
-            raise ValueError("Part defeaturing failed")
+            from liblathe.base.refusal import Refusal
+            raise Refusal("part-defeaturing-failed", "Part defeaturing failed: the outline the operation can follow "
+                                                     "cuts into the part")
 
         return segs_out
 

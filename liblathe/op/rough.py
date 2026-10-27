@@ -20,7 +20,7 @@ class RoughOP(liblathe.op.base.BaseOP):
 
     def generate_path(self):
         """Generate the path for the Rough operation"""
-        roughing_segment_group = self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
+        roughing_segment_group = self.defeatured()
         # self.part_segment_group.create_freecad_shape('roughing_segment_group')
         self.clearing_paths = []
         # passes run from the window start to the window end. When the window
@@ -139,7 +139,7 @@ class RoughOP(liblathe.op.base.BaseOP):
 
             if segmentgroup.count():
                 if self._nose_path(segmentgroup).intersects_group(check_group):
-                    raise ValueError("Calculated roughing path intersects part")
+                    self.refuse("path-intersects-part", "Calculated roughing path intersects part")
 
                 self.tool_paths.append(segmentgroup)
 

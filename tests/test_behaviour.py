@@ -453,5 +453,65 @@ class test_Thread(unittest.TestCase):
         self.assertAlmostEqual(min(c.get_params()["Z"] for c in cmds if c.get_movement() == "G33"), 0.0, places=4)
 
 
+class test_WaivedChecks(unittest.TestCase):
+    """A refusal names its check (liblathe.base.refusal); with the check waived the operation makes the
+    path it refused, and says so in its warnings."""
+
+    THREAD_DOME = {"pitch": 2.5, "thread_depth": 1.5336, "thread_radius": 10.5355, "tool_width": 6, "S": 65.0, "F": 40.0}
+
+    def _refused_then_waived(self, opname, part, params, check, moves=("G0", "G1", "G33")):
+        from liblathe.base.refusal import Refusal, CHECKS
+        self.assertIn(check, CHECKS)
+        with self.assertRaises(Refusal) as refused:
+            R.make_op(opname, part, dict(params)).get_gcode()
+        self.assertEqual(refused.exception.check, check)
+        op = R.make_op(opname, part, dict(params, ignored_checks=(check,)))
+        cmds = op.get_gcode()
+        self.assertTrue(any(c.get_movement() in moves for c in cmds))
+        self.assertTrue(any(("check %s waived" % check) in w for w in op.warnings))
+        return op, cmds
+
+    def test_thread_front_clearance(self):
+        """The dome refuses in front; waived, the next check (a shoulder behind) refuses in turn; both
+        waived, the thread is made with three pitches of lead-in."""
+        from liblathe.base.refusal import Refusal
+        with self.assertRaises(Refusal) as refused:
+            R.make_op("thread", "dome", dict(self.THREAD_DOME)).get_gcode()
+        self.assertEqual(refused.exception.check, "thread-front-clearance")
+        with self.assertRaises(Refusal) as refused:
+            R.make_op("thread", "dome", dict(self.THREAD_DOME, ignored_checks=("thread-front-clearance",))).get_gcode()
+        self.assertEqual(refused.exception.check, "thread-hits-behind-end")
+        op = R.make_op("thread", "dome", dict(self.THREAD_DOME, ignored_checks=("thread-front-clearance", "thread-hits-behind-end")))
+        cmds = op.get_gcode()
+        self.assertTrue(any(c.get_movement() == "G33" for c in cmds))
+        self.assertAlmostEqual(op.z_drive - op.z_front, 3 * 2.5)
+        self.assertEqual(sum("waived" in w for w in op.warnings), 2)
+
+    def test_thread_lead_in_too_long(self):
+        op, _ = self._refused_then_waived("thread", "neck", dict(M12, S=-11.0, F=-25.0, lead_in=4.0),
+                                          "thread-lead-in-too-long")
+        self.assertAlmostEqual(op.z_drive - op.z_front, 4.0)          # the lead-in as set
+
+    def test_thread_hits_behind_end(self):
+        op, _ = self._refused_then_waived("thread", "shoulder", dict(M12, S=0.0, F=-20.0), "thread-hits-behind-end")
+        self.assertAlmostEqual(op.z_back, -20.0)                      # ends where set
+
+    def test_face_cuts_part(self):
+        self._refused_then_waived("face", "shoulder", {"stock_to_leave": 0, "face_z": -20.0}, "face-cuts-part",
+                                  moves=("G0", "G1"))
+
+    def test_other_checks_still_refuse(self):
+        """Waiving one check leaves the others: the shoulder thread still refuses with another one waived."""
+        with self.assertRaisesRegex(ValueError, "would hit the part behind"):
+            R.make_op("thread", "shoulder", dict(M12, S=0.0, F=-20.0, ignored_checks=("thread-front-clearance",))).get_gcode()
+
+    def test_hard_errors_not_waivable(self):
+        """No sensible path: a plain error, whatever is waived."""
+        from liblathe.base.refusal import Refusal, CHECKS
+        with self.assertRaises(ValueError) as err:
+            R.make_op("thread", "dome", dict(self.THREAD_DOME, pitch=0, ignored_checks=tuple(CHECKS))).get_gcode()
+        self.assertNotIsInstance(err.exception, Refusal)
+
+
 if __name__ == '__main__':
     unittest.main()

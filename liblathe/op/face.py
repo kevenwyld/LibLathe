@@ -76,8 +76,9 @@ class FaceOP(liblathe.op.base.BaseOP):
         r_in = self.min_dia * 0.5
         r_part = self.part_radius_above(z_min + 1e-4, z_max)
         if r_part > r_in + 1e-4:
-            raise ValueError("Facing to Z %.3f would cut into the part (radius %.3f in front of it): set Min Diameter "
-                             "to at least %.3f" % (z_min, r_part, 2 * r_part))
+            self.refuse("face-cuts-part",
+                        "Facing to Z %.3f would cut into the part (radius %.3f in front of it): set Min Diameter "
+                        "to at least %.3f" % (z_min, r_part, 2 * r_part))
 
     def add_front_chamfer(self, part_boundbox, front=None):
         """

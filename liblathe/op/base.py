@@ -2,6 +2,7 @@ from liblathe.base.command import Command
 from liblathe.base.point import Point
 from liblathe.base.segment import Segment
 from liblathe.base.segmentgroup import SegmentGroup
+from liblathe.base.refusal import Refusal
 
 
 # grid for the rectangle dilation when it cuts under the model's size
@@ -10,6 +11,30 @@ FINE = 0.001
 
 class BaseOP:
     """Base class for all turning operations."""
+
+    # the checks (see liblathe.base.refusal) whose refusals are waived: the
+    # operation warns and carries on instead
+    ignored_checks = ()
+
+    def refuse(self, check, message):
+        """Refuse the path (raise a Refusal naming the check), unless the check
+        is waived: then record the reason as a warning and return, and the
+        caller carries on."""
+        if check not in (self.ignored_checks or ()):
+            raise Refusal(check, message)
+        if not hasattr(self, "warnings") or self.warnings is None:
+            self.warnings = []
+        self.warnings.append("Generated anyway (check %s waived): %s" % (check, message))
+
+    def defeatured(self):
+        """The part's outline the operation can follow (see
+        SegmentGroup.defeature); one that would cut into the part is refused,
+        unless that check is waived."""
+        try:
+            return self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving)
+        except Refusal as refusal:
+            self.refuse(refusal.check, str(refusal))
+            return self.part_segment_group.defeature(self.stock.z_min, self.tool, self.allow_grooving, check=False)
 
     # apply tool nose radius compensation to contour paths
     nose_comp = True
@@ -318,7 +343,7 @@ class BaseOP:
         """
         # use a small offset to reduce false positives
         if segmentgroup.intersects_group(self.target_outline().offset_path(-0.001)):
-            raise ValueError(error)
+            self.refuse("path-intersects-part", error)
         # tool nose radius compensation (imaginary tip programming)
         segmentgroup = self.nose_compensate(segmentgroup)
         if drop_front_face:

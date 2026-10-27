@@ -89,7 +89,10 @@ class GrooveOP(liblathe.op.base.BaseOP):
         z_lo = self.z_end()
         z_hi = top - w
         if z_hi < z_lo - 1e-9:
-            raise ValueError("The Z range (%.3f) is narrower than the grooving tool (%.3f)" % (top - z_lo, w))
+            self.refuse("groove-narrower-than-blade",
+                        "The Z range (%.3f) is narrower than the grooving tool (%.3f)" % (top - z_lo, w))
+            # waived: one plunge, the blade's width from the back of the range
+            z_hi = z_lo
 
         r_outer = -self.x_outer()            # stock radius (or max diameter / 2)
         # lowest the reference may go: the minimum diameter if one is set,
