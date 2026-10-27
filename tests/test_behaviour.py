@@ -424,6 +424,29 @@ class test_Thread(unittest.TestCase):
             R.make_op("thread", "dome", {"pitch": 2.5, "thread_depth": 1.5336, "thread_radius": 10.5355,
                                          "tool_width": 6, "S": 65.0, "F": 40.0}).get_gcode()
 
+    def test_behind_a_short_neck_lead_in_shortened(self):
+        """A thread behind a 3 mm neck: the lead-in is shortened to fit in the neck (the insert's
+        flank, not its full width, ahead of the tip), with a note, and every pass starts in the neck."""
+        o = R.make_op("thread", "neck", dict(M12, S=-11.0, F=-25.0))
+        cmds = o.get_gcode()
+        lead = o.z_drive - o.z_front
+        # the head at Z -8 stands 1.0735 above the root: the flank (60 degrees) is clear of it
+        # 1.0735 * tan(30) = 0.62 behind it, so the pass starts 3 - 0.62 = 2.38 in front of the thread
+        self.assertAlmostEqual(lead, 3.0 - 1.0735 * math.tan(math.radians(30)), delta=0.06)
+        self.assertTrue(any("Lead-in shortened" in w for w in o.warnings))
+        starts = [c.get_params()["Z"] for c in cmds if c.get_movement() == "G0" and "Z" in c.get_params()]
+        self.assertLess(max(z for z in starts if z < -1.0), -8.0 + 1e-6)
+
+    def test_behind_a_short_neck_set_lead_in_too_long(self):
+        with self.assertRaisesRegex(ValueError, r"lead-in of at most 2\.\d+ fits"):
+            R.make_op("thread", "neck", dict(M12, S=-11.0, F=-25.0, lead_in=4.0)).get_gcode()
+
+    def test_behind_a_long_neck_lead_in_unchanged(self):
+        o = R.make_op("thread", "neck_long", dict(M12, S=-11.0, F=-25.0))
+        o.get_gcode()
+        self.assertAlmostEqual(o.z_drive - o.z_front, 3 * 1.75)
+        self.assertFalse(any("Lead-in" in w for w in o.warnings))
+
     def test_runs_to_the_stock_end(self):
         """Threading to the end of the stock is allowed: the fixture is not assumed."""
         cmds = self._thread().get_gcode()

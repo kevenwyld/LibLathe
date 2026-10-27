@@ -93,6 +93,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
         # where the full-depth thread ends: the run-out tapers out from here
         self.z_full = self.z_back + self.run_out
         lead = self.lead_in if self.lead_in > 0 else 3 * self.pitch
+        if not self.internal:
+            lead = self._fit_lead_in(lead, depth)
         self.z_drive = self.z_front + lead
         sign = 1.0 if self.internal else -1.0       # deeper is outward for internal threads
 
@@ -128,30 +130,85 @@ class ThreadOP(liblathe.op.base.BaseOP):
         if not self.internal:
             self._check_clearance(depth)
 
+    def _insert_profile(self):
+        """The insert's half width and its flanks' run per unit of height
+        (tan of half its angle): its profile rises from the tip at that
+        slope up to its half width, then is straight. 0 when not given."""
+        half = self.tool_width / 2 if self.tool_width > 0 else 0.0
+        slope = math.tan(math.radians(self.tool_angle / 2)) if self.tool_angle > 0 else 0.0
+        return half, slope
+
+    def _front_room(self, depth):
+        """
+        The longest lead-in the part in front of the thread leaves room for,
+        and the Z of the part that limits it (None, None: no limit). Every
+        pass runs from the lead-in to the thread at its depth, so its tip
+        needs the part below the deepest pass's tip all the way, and its
+        tailstock-side flank, just ahead of the tip, needs the part under
+        that flank: part h above the tip is clear of an insert whose tip is
+        more than min(h * slope, half width) behind it. (A thread behind a
+        neck: the insert drops in in the neck and threads back into the
+        shoulder.)
+        """
+        tip = self.thread_radius - depth
+        half, slope = self._insert_profile()
+        room = where = None
+        for seg in self.part_segment_group.get_segments():
+            for x, z in _sample(seg, 0.05):
+                h = -x - tip
+                if h <= 1e-3 or z <= self.z_front + 1e-6:
+                    continue
+                reach = min(h * slope, half) if slope > 0 else half
+                fits = z - reach - self.z_front
+                if room is None or fits < room:
+                    room, where = fits, z
+        return room, where
+
+    def _fit_lead_in(self, lead, depth):
+        """The lead-in, shortened to the room in front of the thread if it
+        was worked out (three pitches), refused if it was set longer, and the
+        thread refused if there is no room at all (external threads)."""
+        room, where = self._front_room(depth)
+        if room is None or lead <= room + 1e-9:
+            return lead
+        tip = self.thread_radius - depth
+        if room <= 1e-3:
+            raise ValueError(
+                "Right in front of the thread the part stands above the thread's root (radius %.3f), at Z %.3f: "
+                "every pass starts in front of the thread at its depth and would cut into it, whatever the lead-in. "
+                "A single-point thread needs the part in front of it below the root (a chamfer, a neck or a "
+                "relief groove)" % (tip, where))
+        if self.lead_in > 0:
+            raise ValueError(
+                "The lead-in (%.3f) is longer than the room in front of the thread: the part stands above the "
+                "thread's root (radius %.3f) at Z %.3f. A lead-in of at most %.3f fits"
+                % (lead, tip, where, math.floor(room * 1000) / 1000))
+        room = math.floor(room * 1000) / 1000
+        self.warnings.append(
+            "Lead-in shortened to %.3f (from %.3f, three pitches): in front of the thread the part stands above "
+            "the thread's root at Z %.3f. Every pass starts that far in front of the thread, so the Z axis has only "
+            "that long to come up to speed: check the start of the thread" % (room, lead, where))
+        return room
+
     def _check_clearance(self, depth):
         """
-        Keep the insert clear of the part outside the thread (external
-        threads). Only the part is checked: where it is held (the chuck, a
-        collet, a fixture) is up to the operator, not assumed from the stock. In front of the thread every pass runs in from the lead-in
-        at depth, so nothing there may stand above the deepest pass's tip.
-        Behind the thread's end the insert's chuck-side flank stops: its
+        Keep the insert clear of the part behind the thread (external
+        threads; in front of it the lead-in is fitted to the part, see
+        _front_room). Only the part is checked: where it is held (the
+        chuck, a collet, a fixture) is up to the operator, not assumed from
+        the stock. Behind the thread's end the insert's chuck-side flank stops: its
         profile (tool_angle) rises from the tip up to its half width
         (tool_width), then it is straight, so the part there must stay under
         that flank. Without a width only the tip is checked.
         """
         tip = self.thread_radius - depth                # the deepest pass's tip
-        half = self.tool_width / 2 if self.tool_width > 0 else 0.0
-        slope = math.tan(math.radians(self.tool_angle / 2)) if self.tool_angle > 0 else 0.0
+        half, slope = self._insert_profile()
         front, back = self.z_front, self.z_back
         latest_end = None        # the highest Z the thread must end at to clear what is behind it
-        proud_front = None       # the part above the root in front of the thread
         for seg in self.part_segment_group.get_segments():
             for x, z in _sample(seg, 0.05):
                 r = -x
-                if r <= tip + 1e-3:
-                    continue
-                if front + 1e-6 < z <= self.z_drive + half:
-                    proud_front = z if proud_front is None else max(proud_front, z)
+                if r <= tip + 1e-3 or z > front + 1e-6:
                     continue
                 # behind the end, the insert's flank cutting into the thread's
                 # own diameter is just how the thread ends; only part standing
@@ -163,12 +220,6 @@ class ThreadOP(liblathe.op.base.BaseOP):
                     end = z + min((r - tip) * slope, half)
                     if end > back + 1e-6 and (latest_end is None or end > latest_end):
                         latest_end = end
-        if proud_front is not None:
-            raise ValueError(
-                "In front of the thread the part stands above the thread's root (radius %.3f) from Z %.3f to "
-                "Z %.3f. Every pass starts in front of the thread at its depth and would cut into it, whatever "
-                "the lead-in: a single-point thread needs the part in front of it below the root (a chamfer or "
-                "a relief groove)" % (tip, front, proud_front))
         if latest_end is not None:
             # round the suggestion the safe way (up), so using it clears
             latest_end = math.ceil(latest_end * 1000 - 1e-6) / 1000
