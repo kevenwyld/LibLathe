@@ -345,14 +345,17 @@ class BaseOP:
 
         Only real limits clip. Beyond the stock front and outside the stock
         diameter the path is in air, so those sides stay open unless the
-        window is set inside the stock; likewise the axis side stays open
-        unless a minimum diameter is set (a ball or point needs the tip to
-        reach past the axis).
+        window is set inside the stock. Without a minimum diameter the tip
+        may pass the axis by one nose radius, which puts the nose's centre
+        on the axis (a ball or point is finished to the centre), and no
+        further: past that the nose is on the far side of the turning part,
+        where the insert would cut it with its back (an offset pass of a
+        ball's end reached 3.6 mm past the axis and flattened the ball).
         """
         inf = float("inf")
         d = 2 * self.nose_radius()
         x_min = self.x_outer() + d if (self.clip_outer or self.x_outer() > self.stock.x_min + 1e-6) else -inf
-        x_max = self.x_inner() if self.min_dia > 0 else inf
+        x_max = self.x_inner() if self.min_dia > 0 else self.nose_radius()
         z_min = self.z_end()
         z_max = self.z_start() if self.starts_in_stock() else inf
         return x_min, x_max, z_min, z_max
