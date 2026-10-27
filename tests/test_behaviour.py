@@ -216,24 +216,63 @@ class test_ThreadRunOut(unittest.TestCase):
     def _op(self, **extra):
         return R.make_op("thread", "m12bar", dict(M12, S=56.196, F=0.0, thread_length=20.0, **extra))
 
-    def test_g33_passes(self):
-        op = self._op(run_out=1.75)
+    def _pass_ends(self, op):
+        """Per pass (depth, X at depth, start Z, end of the full-depth stretch, end of the run-out)."""
         cmds = op.get_gcode()
-        g33 = [c.get_params() for c in cmds if c.get_movement() == "G33"]
-        z_back, z_full = op.z_back, op.z_back + 1.75
-        # in pairs: at depth to the run-out's start, then out to the crest at the end
-        self.assertEqual(len(g33), 2 * len(op.passes))
-        for (x, _), straight, taper in zip(op.passes, g33[0::2], g33[1::2]):
-            self.assertAlmostEqual(straight["X"], x)
-            self.assertAlmostEqual(straight["Z"], z_full)
-            self.assertAlmostEqual(taper["X"], op.thread_radius)
-            self.assertAlmostEqual(taper["Z"], z_back)
+        out, i = [], 0
+        for d, (x, z0) in zip(op.depths, op.passes):
+            while cmds[i].get_movement() != "G33":
+                i += 1
+            straight = cmds[i].get_params()
+            i += 2                                   # the G33 and its display G1
+            end = straight
+            if op.run_out > 0:
+                while cmds[i].get_movement() != "G33":
+                    i += 1
+                end = cmds[i].get_params()
+                i += 2
+            out.append((d, x, z0, straight["Z"], end["Z"], end["X"]))
+        return out
 
-    def test_no_run_out_unchanged(self):
+    def test_g33_passes(self):
+        """In pairs: at depth, then out to the crest at the deepest pass's slope; the deepest pass
+        ends at the thread's end, each shallower one that pass moved back along the infeed line."""
+        op = self._op(run_out=1.75)
+        full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
+        rows = self._pass_ends(op)
+        self.assertEqual(len(rows), len(op.passes))
+        for d, x, z0, z_full, z_end, x_end in rows:
+            self.assertAlmostEqual(z_full, op.z_back + 1.75 + (full - d) * shift)
+            self.assertAlmostEqual(x_end, op.thread_radius)
+            self.assertAlmostEqual((z_full - z_end) / d, 1.75 / full)        # one slope for every pass
+        deepest = max(rows)
+        self.assertAlmostEqual(deepest[4], op.z_back)
+
+    def test_passes_nest(self):
+        """Every pass is the deepest pass translated along the infeed line (as LinuxCNC's G76 offsets a
+        whole pass by zoff): out by the depth it is short and toward the tailstock by that times
+        tan(infeed), at its start, the end of its full depth and its run-out alike. Passes that all
+        ended at one Z left grooves of their own in the run-out."""
+        op = self._op(run_out=1.75)
+        full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
+        rows = self._pass_ends(op)
+        D = max(rows)
+        for d, x, z0, z_full, z_end, x_end in rows:
+            back = (full - d) * shift
+            self.assertAlmostEqual(x - D[1], full - d)                          # out (external: larger X)
+            self.assertAlmostEqual(z0 - D[2], back)
+            self.assertAlmostEqual(z_full - D[3], back)
+            # the run-out ends where the deepest pass's run-out, moved, reaches this pass's depth
+            self.assertAlmostEqual(z_end, D[3] + back - 1.75 * d / full)
+
+    def test_no_run_out(self):
+        """Stopping dead: each pass ends at the thread's end moved back along the infeed line, the deepest at it."""
         op = self._op()
-        g33 = [c.get_params() for c in op.get_gcode() if c.get_movement() == "G33"]
-        self.assertEqual(len(g33), len(op.passes))
-        self.assertTrue(all(abs(p["Z"] - op.z_back) < 1e-9 for p in g33))
+        full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
+        rows = self._pass_ends(op)
+        for d, x, z0, z_full, z_end, x_end in rows:
+            self.assertAlmostEqual(z_full, op.z_back + (full - d) * shift)
+        self.assertAlmostEqual(min(r[3] for r in rows), op.z_back)
 
     def test_g76_taper_words(self):
         params = [c.get_params() for c in self._op(run_out=1.75, canned=True).get_gcode() if c.get_movement() == "G76"][0]

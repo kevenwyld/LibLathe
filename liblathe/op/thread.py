@@ -265,7 +265,23 @@ class ThreadOP(liblathe.op.base.BaseOP):
                 params.update({'E': self.run_out, 'L': 2})
             cmds.append(Command('G76', params))
             return cmds
-        for x, z in self.passes:
+        # Every pass is the deepest pass moved back along the infeed line: out
+        # by the depth it is short of the full depth and, with a flank
+        # infeed, toward the tailstock by that times tan(infeed angle), its end
+        # and run-out included (as LinuxCNC's G76 does: the whole pass offset
+        # by zoff). So each pass lies inside the finished groove to its end;
+        # with all passes ending at the same Z, the shallow ones' run-outs
+        # left grooves of their own beside the last one's.
+        full = float(self.thread_depth)
+        shift = math.tan(math.radians(self.infeed_angle))
+        ends = []
+        for d in self.depths:
+            back = (full - d) * shift            # toward the tailstock
+            z_full = self.z_full + back
+            # the run-out at the deepest pass's slope, out to the crest
+            z_end = z_full - self.run_out * d / full if self.run_out > 0 else z_full
+            ends.append((z_full, z_end))
+        for (x, z), (z_full, z_end) in zip(self.passes, ends):
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
             # FreeCAD's path display skips G33 (and keeps the tool where the
@@ -276,16 +292,14 @@ class ThreadOP(liblathe.op.base.BaseOP):
             # (the move goes nowhere, so any feed will do; one is needed, as a
             # control refuses G1 without a feed rate, and threading has none)
             feed = self.hfeed if self.hfeed and self.hfeed > 0 else 1.0
-            cmds.append(Command('G33', {'X': x, 'Z': self.z_full, 'K': self.pitch}))
-            cmds.append(Command('G1', {'X': x, 'Z': self.z_full, 'F': feed}))
-            x_end = x
+            cmds.append(Command('G33', {'X': x, 'Z': z_full, 'K': self.pitch}))
+            cmds.append(Command('G1', {'X': x, 'Z': z_full, 'F': feed}))
             if self.run_out > 0:
-                # the run-out: out to the crest by the thread's end, still
-                # synchronised with the spindle
-                x_end = self.thread_radius
-                cmds.append(Command('G33', {'X': x_end, 'Z': self.z_back, 'K': self.pitch}))
-                cmds.append(Command('G1', {'X': x_end, 'Z': self.z_back, 'F': feed}))
-            cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_back}))
+                # the run-out: out to the crest, still synchronised with the
+                # spindle (the deepest pass by the thread's end)
+                cmds.append(Command('G33', {'X': self.thread_radius, 'Z': z_end, 'K': self.pitch}))
+                cmds.append(Command('G1', {'X': self.thread_radius, 'Z': z_end, 'F': feed}))
+            cmds.append(Command('G0', {'X': self.r_clear, 'Z': z_end}))
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
         return cmds
 
