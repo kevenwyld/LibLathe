@@ -296,8 +296,16 @@ class ThreadOP(liblathe.op.base.BaseOP):
             cmds.append(Command('G1', {'X': x, 'Z': z_full, 'F': feed}))
             if self.run_out > 0:
                 # the run-out: out to the crest, still synchronised with the
-                # spindle (the deepest pass by the thread's end)
-                cmds.append(Command('G33', {'X': self.thread_radius, 'Z': z_end, 'K': self.pitch}))
+                # spindle (the deepest pass by the thread's end). G33's K is
+                # the distance along the move per revolution, not along Z, so
+                # for the pitch along Z to stay the thread's on this sloping
+                # move K is the pitch times its length over its length along
+                # Z (as LinuxCNC's G76 does for its taper); with K the pitch,
+                # the run-out's pitch shrank and the exit drifted off the
+                # thread, by more for the deeper passes' longer run-outs
+                dz, dx = abs(z_full - z_end), abs(self.thread_radius - x)
+                k = self.pitch * math.hypot(dz, dx) / dz if dz > 1e-9 else self.pitch
+                cmds.append(Command('G33', {'X': self.thread_radius, 'Z': z_end, 'K': k}))
                 cmds.append(Command('G1', {'X': self.thread_radius, 'Z': z_end, 'F': feed}))
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z_end}))
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))

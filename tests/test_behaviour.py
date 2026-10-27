@@ -231,8 +231,18 @@ class test_ThreadRunOut(unittest.TestCase):
                     i += 1
                 end = cmds[i].get_params()
                 i += 2
-            out.append((d, x, z0, straight["Z"], end["Z"], end["X"]))
+            out.append((d, x, z0, straight["Z"], end["Z"], end["X"], straight["K"], end["K"]))
         return out
+
+    def test_run_out_keeps_the_pitch_along_z(self):
+        """G33's K is the distance along the move per revolution (LinuxCNC): the sloping run-out's K is
+        the pitch times its length over its length along Z, so Z still advances one pitch per turn."""
+        op = self._op(run_out=1.75)
+        for d, x, z0, z_full, z_end, x_end, k_straight, k_out in self._pass_ends(op):
+            self.assertAlmostEqual(k_straight, 1.75)
+            dz, dx = z_full - z_end, x_end - x
+            self.assertAlmostEqual(k_out * dz / math.hypot(dz, dx), 1.75)      # the pitch along Z
+            self.assertAlmostEqual(k_out, 1.75 * math.hypot(1.75, op.thread_depth) / 1.75)
 
     def test_g33_passes(self):
         """In pairs: at depth, then out to the crest at the deepest pass's slope; the deepest pass
@@ -241,7 +251,7 @@ class test_ThreadRunOut(unittest.TestCase):
         full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
         rows = self._pass_ends(op)
         self.assertEqual(len(rows), len(op.passes))
-        for d, x, z0, z_full, z_end, x_end in rows:
+        for d, x, z0, z_full, z_end, x_end, *_ in rows:
             self.assertAlmostEqual(z_full, op.z_back + 1.75 + (full - d) * shift)
             self.assertAlmostEqual(x_end, op.thread_radius)
             self.assertAlmostEqual((z_full - z_end) / d, 1.75 / full)        # one slope for every pass
@@ -257,7 +267,7 @@ class test_ThreadRunOut(unittest.TestCase):
         full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
         rows = self._pass_ends(op)
         D = max(rows)
-        for d, x, z0, z_full, z_end, x_end in rows:
+        for d, x, z0, z_full, z_end, x_end, *_ in rows:
             back = (full - d) * shift
             self.assertAlmostEqual(x - D[1], full - d)                          # out (external: larger X)
             self.assertAlmostEqual(z0 - D[2], back)
@@ -270,7 +280,7 @@ class test_ThreadRunOut(unittest.TestCase):
         op = self._op()
         full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
         rows = self._pass_ends(op)
-        for d, x, z0, z_full, z_end, x_end in rows:
+        for d, x, z0, z_full, z_end, x_end, *_ in rows:
             self.assertAlmostEqual(z_full, op.z_back + (full - d) * shift)
         self.assertAlmostEqual(min(r[3] for r in rows), op.z_back)
 
