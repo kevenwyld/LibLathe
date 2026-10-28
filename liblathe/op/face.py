@@ -81,13 +81,7 @@ class FaceOP(liblathe.op.base.BaseOP):
                         "to at least %.3f" % (z_min, r_part, 2 * r_part))
 
     def add_front_chamfer(self, part_boundbox, front=None):
-        """
-        With edge breaking, the front corner (the face meeting the diameter)
-        is chamfered: the facing passes go straight across the face, so a
-        short contour pass follows the broken outline round the corner (a
-        millimetre of the face, the chamfer, a millimetre of the diameter),
-        last.
-        """
+        """With edge breaking, a short contour pass round the chamfered front corner, after the facing passes."""
         front = part_boundbox.z_max if front is None else front
         corner = [p for p in self.edges_broken if abs(p.Z - front) < 1e-4]
         if not corner:

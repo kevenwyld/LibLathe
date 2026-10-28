@@ -1,17 +1,6 @@
 """
-Tool outline collision check for turning inserts.
-
-The operations place the insert's imaginary tip on the path and check the
-nose against the part. This checks the rest of the insert: its outline,
-swept along the path, against the part (the surface the operation may cut
-to). It catches what the nose check cannot: the insert's back or leading
-edge, or its body, running into the part (a wall steeper than the insert
-can follow, a pass ending in a groove).
-
-The insert, in the tool's frame (u radially outward, w along Z toward the
-tailstock, the imaginary tip at the origin): a rhombus of side EdgeLength
-with the cutting corner's included angle TipAngle, its bisector at Rotation
-from +w toward +u, and a nose of TipRadius whose centre is at (r, r).
+Sweep the insert's outline (not its cutting nose) along a path and report where it enters the part.
+Tool frame: u radially outward, w along +Z, imaginary tip at the origin, nose centre at (r, r).
 """
 import math
 
@@ -54,12 +43,7 @@ def insert_outline(tool, step=0.1):
 
 
 def rasterize(segmentgroup, z_lo, z_hi, r_hi):
-    """
-    The region inside an outline (a profile from the front on the axis to
-    the back, X negative) as a grid: cell [i, j] is material at
-    z = z_lo + i * GRID, radius j * GRID. Scanlines along r: at each z the
-    outline's crossings, filled in pairs from the axis outward.
-    """
+    """Material inside an outline as a bool grid: cell [i, j] is z = z_lo + i * GRID, radius j * GRID."""
     pts = []
     for seg in segmentgroup.get_segments():
         s = _sample_points(seg, GRID / 2)

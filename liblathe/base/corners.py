@@ -1,14 +1,6 @@
 """
-Corners of a part's outline: finding them, and replacing them with a chamfer
-or a fillet (edge breaking, Turn Chamfer).
-
-The outline is a closed loop of segments in the lathe's plane (X the radius,
-negative; Z along the axis). A corner is where two straight edges meet at an
-angle; consecutive collinear segments are taken as one edge. A corner that
-turns with the loop's orientation is an outside corner (the front corner, a
-shoulder's outer edge): breaking it removes material. One turning against it
-is an inside corner and is left alone. Corners next to an arc (a modelled
-fillet or curve) are not sharp corners and are not offered.
+Find the sharp corners between straight edges of a part outline and replace them with chamfers or fillets.
+Outside corners (turning with the loop) remove material when broken; inside corners and arcs are left alone.
 """
 
 import math
@@ -54,12 +46,7 @@ def _orientation(edges):
 
 
 def find_corners(group):
-    """
-    The sharp corners between straight edges: a list of dicts with the corner's
-    index (between edges i and i + 1), its point, the edges' unit directions
-    (in, out), the angle it turns, whether it is an outside corner, and the
-    edges' lengths.
-    """
+    """Sharp corners between straight edges as dicts: index, point, in, out, turn, outside, len_in, len_out."""
     edges = _edges(group)
     if len(edges) < 2:
         return []
@@ -84,11 +71,8 @@ def find_corners(group):
 
 def replace_corners(group, picks):
     """
-    A new outline with the picked corners replaced: picks maps a corner's index
-    (from find_corners) to ("chamfer", size) or ("fillet", radius). A chamfer
-    takes size off each edge (45 degrees at a square corner); a fillet is the
-    arc tangent to both edges. A corner whose edges are too short for it is
-    left as it is. Returns (group, the indices actually changed).
+    New outline with corners replaced; picks: {index: ("chamfer", size) | ("fillet", radius)}.
+    Corners whose edges are too short are left. Returns (group, indices changed).
     """
     edges = _edges(group)
     corners = {c["index"]: c for c in find_corners(group)}

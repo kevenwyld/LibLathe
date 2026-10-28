@@ -4,23 +4,8 @@ from liblathe.base.command import Command
 
 class PartoffOP(liblathe.op.base.BaseOP):
     """
-    Part off with a parting or grooving insert: one plunge from outside the
-    stock past the centreline.
-
-    The insert is described like GrooveOP's (groove_width, corner_radius,
-    cutting_depth) and programmed to the same reference point: X at the
-    cutting edge's point closest to the axis, Z at its chuck-side flank. The
-    blade's part-side flank lands on the window end (z_end(), the part's
-    back face), so the part keeps that face and the cut is made in the
-    material on the chuck side: the reference Z is z_end() - width.
-
-    Where the part is held is up to the operator: the blade may reach past
-    the end of the stock.
-
-    The plunge goes `overtravel` past the inner limit so the part comes free:
-    the centreline (no pip is left), or the minimum diameter if one is set
-    (the bore of a tube). If the insert's cutting depth cannot
-    reach that far from the outer limit, it stops at its reach and says so.
+    One parting plunge with the blade's part-side flank on z_end(), programmed like GrooveOP (X at the
+    edge's lowest point, Z at the chuck-side flank), `overtravel` past the centreline or min diameter.
     """
 
     needs_tool = False

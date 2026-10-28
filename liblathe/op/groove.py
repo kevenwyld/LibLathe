@@ -8,29 +8,9 @@ from liblathe.base.command import Command
 
 class GrooveOP(liblathe.op.base.BaseOP):
     """
-    Grooving with a grooving (or parting) insert: a blade of width W whose
-    cutting edge is a flat bottom with a corner radius R at each end
-    (R = W / 2 is a full radius insert), with straight flanks above it.
-
-    The path is programmed to the tool's reference point: the cutting edge's
-    point closest to the axis (X) and its chuck-side flank (Z). So the blade
-    spans Z0 .. Z0 + W and its edge rises from X0 at the bottom flat to
-    X0 + R at the flanks.
-
-    The tool can cut in both directions, so the path is found by "drop
-    cutting": at each Z0, the reference X0 is the lowest the blade can go
-    without its cutting edge or flanks crossing the part (plus the stock to
-    leave). Roughing plunges straight in at a spacing of step_over along Z;
-    then finish passes follow the X0 profile from the front to the back.
-
-    The cutting depth is measured from the outer limit (x_outer(): the
-    stock, or the max diameter if one is set), which is also where plunges
-    start. Measuring from the stock is the safe default: the holder cannot
-    hit uncut stock. When the surface has already been turned smaller, the
-    max diameter says so.
-
-    Internally X is negative (the part profile is on the -X side); the
-    output X is a positive radius.
+    Grooving with a blade of width W and corner radius R, programmed to the edge's lowest point (X) and
+    its chuck-side flank (Z). Drop-cutting finds the lowest X0 per Z0 clear of the part; roughing plunges,
+    then finish passes follow that profile. Cutting depth is measured from x_outer(), where plunges start.
     """
 
     # the tool is described by the parameters below, not a liblathe Tool
@@ -80,11 +60,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         r = max(0.0, min(float(self.corner_radius), w / 2))
         dz = self.resolution
 
-        # Z range of the reference point (the chuck-side flank): the whole
-        # blade stays inside the window, so it never touches the part outside
-        # the Z range the user chose. Toward the tailstock the limit is the
-        # window start, or the stock front when the window starts in front
-        # of the stock.
+        # Z range of the reference point: the whole blade stays inside the window
         top = self.z_start() if self.starts_in_stock() else self.stock.z_max
         z_lo = self.z_end()
         z_hi = top - w
@@ -95,10 +71,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
             z_hi = z_lo
 
         r_outer = -self.x_outer()            # stock radius (or max diameter / 2)
-        # lowest the reference may go: the minimum diameter if one is set,
-        # otherwise past the axis by the corner radius (puts the round end's
-        # centre on the axis, which a ball or point needs), and never deeper
-        # than the tool's cutting depth below the stock surface
+        # lowest the reference may go: the min diameter, else the corner radius past the axis,
+        # and never deeper than the cutting depth below the stock
         r_axis = -self.x_inner() if self.min_dia > 0 else -r
         r_min = max(r_axis, r_outer - self.cutting_depth) if self.cutting_depth > 0 else r_axis
 
@@ -154,12 +128,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 % (allowance, self.turning_depth))
         rough = np.maximum(drop(allowance), r_min) if allowance > 0 else final
 
-        # roughing plunges, front to back, across each stretch where the blade
-        # can actually go down (leaving the allowance): from one end of the
-        # stretch to the other, at most `spacing` apart (and never further
-        # than 80% of the blade width, so neighbours overlap). Positions
-        # fixed from the ends of the Z range miss the stretches next to
-        # walls, where the allowance blocks the blade at the range ends.
+        # plunges across each stretch the blade can go down, at most `spacing` apart
+        # and never more than 80% of the width, so neighbours overlap
         spacing = min(self.step_over if self.step_over > 0 else w, 0.8 * w)
         # where a plunge actually reaches the profile (to within the finish
         # allowance), not just dips below the surface: a blade blocked by a
@@ -203,12 +173,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
         # below, so positions outside it do not lift its ends
         final_raw = np.maximum(drop(0.0, guarded=False), r_min)
         targets = [final_raw if off <= 0 else np.maximum(drop(off, guarded=False), r_min) for off in offsets]
-        # Each pass works only within its own Z range: the range shrunk by
-        # the Z stock it leaves. Otherwise, at a range end next to a wall, the
-        # blade overlaps the stock the pass leaves on that wall and rolls its
-        # corner over the edge of that stock (cutting a rounded edge into it)
-        # before it can go down. Shrunk, it goes straight down at its own
-        # distance from the wall.
+        # each pass works within the range shrunk by the Z stock it leaves, so by a wall
+        # it goes straight down instead of rolling its corner over that stock
         windows = []
         for off in offsets:
             keep = (z_ref <= z_hi - (sz + off) + 1e-9) & (z_ref >= z_lo + (sz + off) - 1e-9)
@@ -216,14 +182,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 keep = np.zeros(len(z_ref), bool); keep[len(z_ref) // 2] = True
             windows.append(keep)
 
-        # Respect the insert's turning depth. Track the material the plunges
-        # leave; wherever a finish pass would take a cut more than the
-        # turning depth deep over more than the turning depth of length
-        # (where no plunge could reach), put side-turning passes in front of
-        # it that step down by at most 90% of the turning depth each, re-measured
-        # from the material left, over just the stretches that need it. A thin layer,
-        # such as the finish stock on a wall or the bottom, is fine: that is
-        # a light cut whichever side of the blade takes it.
+        # where a finish pass would cut deeper than the turning depth over more than its length,
+        # side-turning passes stepping down by at most 90% of it go first (see _Blade.overload)
         for z0, floor in self.plunges:
             geo.cut_position(floor, z0)
         steps_added = 0
@@ -255,12 +215,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
 
     def _side_turn(self, rough, z_ref, r_outer, w, t_depth, geo):
         """
-        Roughing in levels: from the outer limit down by step_down at a time
-        (to the rough profile), a traverse along Z at each level over every
-        stretch where it removes material, alternating direction so the next
-        level starts where this one ended. Only a stretch shorter than a tenth
-        of the blade width (a groove the blade practically fills) is left to
-        plunges, and the op says so (see generate_path).
+        Roughing in levels of step_down: a traverse along Z at each level over every stretch with
+        material, alternating direction. Stretches under SIDE_TURN_MIN blade widths are left to plunges.
         """
         step = float(self.step_down) if self.step_down and self.step_down > 0 else (
             0.9 * t_depth if t_depth > 0 else 0.5 * w)
@@ -279,12 +235,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
             if not forward:
                 runs = runs[::-1]
             for a, b in runs:
-                # by a wall the floor rises along the blade's corner radius
-                # (within a corner radius of the wall): following it up there
-                # is a wiggle grazing the top with next to nothing to cut, so
-                # the traverse starts and ends where it is down at its level
-                # (the finish follows the walls). A sloped or curved floor
-                # further from the ends is still followed.
+                # within a corner radius of a wall the floor rises along the corner: the traverse
+                # starts and ends where it is down at its level (the finish does the walls)
                 reach = corner + 2 * dz
                 a0, b0 = a, b
                 while a < b and path[a] > level + 1e-6 and z_ref[a0] - z_ref[a] <= reach:
@@ -318,12 +270,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
 
     def _add_finish(self, prof, z_ref):
-        """
-        Add a finish pass: by default one path in, across and out (down the
-        front wall, along the bottom, up the back wall), which gives the
-        best finish; with finish_two_sided, two paths meeting at the deepest
-        point (down each wall toward the middle).
-        """
+        """A finish pass: in, across and out; or with finish_two_sided two halves meeting at the deepest point."""
         parts = _halves(prof, z_ref) if self.finish_two_sided else [(prof, z_ref)]
         for xs, zs in parts:
             self.finish_paths.append(_simplify(list(zip(xs.tolist(), zs.tolist())), 0.0005))
@@ -506,12 +453,7 @@ class _Blade:
 
 
 def _dilate_rect(profile, sx, sz, dz):
-    """
-    Grow the profile by a rectangle: sz either way along Z, then sx
-    radially. Negative values shrink it (a negative stock to leave, cutting
-    under the model's size): along Z the smallest neighbour rather than the
-    largest, and radii stop at the axis.
-    """
+    """Grow the profile by sz along Z then sx radially; negative values shrink it, never past the axis."""
     vals = profile.values
     out = vals.copy()
     pick = np.maximum if sz >= 0 else np.minimum

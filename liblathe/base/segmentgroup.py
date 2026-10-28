@@ -156,12 +156,8 @@ class SegmentGroup:
 
             return arcType
 
-        # drop zero-length segments: they come from offsetting/defeaturing faces
-        # that collapse to a point, and otherwise generate a retract-and-plunge
-        # (G0 into the part) to "cut" them
-        # An arc whose ends (nearly) coincide is read by a controller as a full
-        # circle (G2/G3 with the same start and end), so drop arcs shorter than
-        # a micron as well, measured as the chord, not the arc length.
+        # drop zero-length segments (they would retract and plunge) and arcs whose
+        # ends nearly coincide (a controller reads those as a full circle)
         kept = []
         for s in self.segments:
             if s.get_length() <= 1e-6 or (s.bulge != 0 and s.start.distance_to(s.end) <= 1e-3):
@@ -248,18 +244,8 @@ class SegmentGroup:
 
     def dilate_rect(self, sx, sz, resolution=0.005, tolerance=0.0005):
         """
-        The contour grown by a rectangle: sx in X (radially, away from the
-        axis) and sz in Z (both ways along the axis), returned as a polyline
-        from the front (on the axis) to the contour's last Z. Negative values
-        shrink it instead (faces move into the part, diameters toward the
-        axis, not past it).
-
-        The contour must be a profile seen from outside the part (one radius
-        per Z, faces as vertical steps), as the defeatured part and its
-        offsets are. Computed on a Z grid at `resolution`; each grid value is
-        the largest of its neighbours so the polyline never cuts inside the
-        true dilation (faces may move up to one grid step outward), then
-        simplified to `tolerance`.
+        The contour (one radius per Z) grown by sx radially and sz along Z, as a polyline from the axis.
+        Negative values shrink it, never past the axis. Computed on a Z grid, erring outward by one step.
         """
         import numpy as np
 
@@ -278,10 +264,7 @@ class SegmentGroup:
             i = int(round((z - start) / resolution))
             if 0 <= i < n and -x > prof[i]:
                 prof[i] = -x
-        # a negative sx or sz shrinks the contour instead (a negative stock to
-        # leave: cutting under the model's size): along Z the radius is the
-        # smallest of its neighbours rather than the largest, and radii stop
-        # at the axis
+        # shrinking (negative stock): the smallest neighbour along Z, radii stopped at the axis
         k_max = int(math.ceil(abs(sz) / resolution))
         pick = np.maximum if sz >= 0 else np.minimum
         grown = prof.copy()
@@ -311,11 +294,8 @@ class SegmentGroup:
 
     def clip_to_box(self, x_min, x_max, z_min, z_max, tol=1e-6):
         """
-        Return a new SegmentGroup containing only the parts of this group's
-        segments that lie inside the box x_min <= X <= x_max, z_min <= Z <= z_max.
-        Lines and arcs are split where they cross the box edges; arcs keep
-        their centre and direction. The result may contain several
-        disconnected chains (see split_connected()).
+        New group with only the pieces inside the box, split at its edges (arcs keep centre and direction).
+        May hold several disconnected chains (see split_connected()).
         """
         out = SegmentGroup()
         for seg in self.get_segments():

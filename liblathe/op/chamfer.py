@@ -1,12 +1,6 @@
 """
-Chamfers and fillets at chosen corners of the part (Turn Chamfer).
-
-Each corner is given by where it is (its radius and Z: a circular edge of
-the model) with a kind ("chamfer" or "fillet") and a size (a chamfer's leg
-along each edge, a fillet's radius). The part's outline is changed at those
-corners, and a short contour pass follows it round each one: a millimetre of
-the edge before, the chamfer or fillet, a millimetre of the edge after, with
-nose radius compensation and a lead-in, as Profile's finishing pass does.
+Chamfers or fillets at chosen corners, each as (radius, z, kind, size): the outline is changed there and
+a short nose-compensated contour pass runs round each corner, as Profile's finishing pass does.
 """
 
 import liblathe.op.base

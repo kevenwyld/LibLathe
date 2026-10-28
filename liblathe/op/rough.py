@@ -23,16 +23,8 @@ class RoughOP(liblathe.op.base.BaseOP):
         roughing_segment_group = self.defeatured()
         # self.part_segment_group.create_freecad_shape('roughing_segment_group')
         self.clearing_paths = []
-        # passes run from the window start to the window end. When the window
-        # starts in front of the stock they start a clearance away, in air;
-        # when it starts inside the stock they start on the window edge and
-        # are entered radially (see below)
-        # The passes cover the window. In front of the stock they start the
-        # lead-in in front, in air. Inside the stock they start on the
-        # window's edge: entered radially with part in front (or lead-in 0),
-        # otherwise each one starting at the edge is approached along Z from
-        # the lead-in in front, at its own radius (cutting only the stock
-        # in front above it, nothing outside the window below it).
+        # passes cover the window: in front of the stock they start at the lead-in in air; inside
+        # it they start on the window's edge, entered radially or approached along Z from the lead-in
         lead = self.lead_in_length()
         in_stock = self.starts_in_stock()
         starts_in_stock = in_stock and self.radial_entry()
@@ -44,18 +36,11 @@ class RoughOP(liblathe.op.base.BaseOP):
         # create roughing boundary offset by the stock to leave value
         # include a minimal offset to ensure the roughing passes don't intersect the part
         roughing_boundary = self.offset_contour(roughing_segment_group, extra=0.01)
-        # The passes start and stop with the imaginary tip on this boundary,
-        # so it must be the tip's locus where the nose just touches the part,
-        # not the part itself: where the boundary falls away behind a pass
-        # (the pass starts inside a groove, behind its front wall), the nose
-        # reaches back into the wall otherwise. Diameters and faces in front
-        # of the tip are unchanged.
+        # the boundary is the tip's locus where the nose just touches the part, so a pass
+        # starting behind a groove's front wall does not reach back into it
         roughing_boundary = self.nose_compensate(roughing_boundary)
-        # with the tip programmed, the check that a pass stays clear of the
-        # part is made on the nose: its centre path against the part grown by
-        # the nose radius (a hair less, so touching is not a hit). The
-        # imaginary tip itself may lie inside the outline where the nose
-        # touches a slope or an arc.
+        # the clearance check is on the nose: its centre path against the part grown
+        # by the nose radius, a hair less so touching is not a hit
         r_nose = getattr(self.tool, "nose_radius", 0) or 0 if self.nose_comp else 0
         target = self.target_outline()
         check_group = target.offset_path(r_nose - 0.005) if r_nose > 0.005 else target
@@ -86,10 +71,8 @@ class RoughOP(liblathe.op.base.BaseOP):
                             continue
                         intersections.append(Intersection(p, seg))
 
-            # The pass alternates between air and material at each crossing.
-            # Whether it starts in material is not assumed: a window that
-            # starts inside the stock (e.g. limited to a groove) can put the
-            # pass start under the part's outline.
+            # the pass alternates between air and material at each crossing; a window starting
+            # inside the stock can put its start under the part's outline
             inside = self.inside_boundary(roughing_boundary, x_pos, z_max, x_min)
 
             points = [Intersection(pt1, None)]
@@ -159,13 +142,8 @@ class RoughOP(liblathe.op.base.BaseOP):
     @staticmethod
     def inside_boundary(boundary, x, z, x_far):
         """
-        True when the point (x, z) is on the part side of the roughing
-        boundary (between the boundary and the axis). Casts a ray from the
-        point straight out (toward x_far) and counts boundary crossings: the
-        boundary runs from the axis at the front of the part to its back, so
-        an odd count means the point is under it. The ray is nudged a hair
-        into the pass so a pass that starts level with a boundary vertex is
-        not counted twice.
+        True when (x, z) is under the roughing boundary: a ray straight out toward x_far crosses it an
+        odd number of times. The ray is nudged a hair so a start level with a vertex is not counted twice.
         """
         z -= 1e-5
         ray = Segment(Point(x, 0, z), Point(x_far - 10, 0, z))
@@ -179,14 +157,7 @@ class RoughOP(liblathe.op.base.BaseOP):
         return len(hits) % 2 == 1
 
     def add_cleanup_pass(self, roughing_segment_group):
-        """
-        Add a contour pass along the part at the stock to leave, after the
-        roughing passes. The roughing passes leave a staircase where the part
-        is tapered or curved (up to one step over high), and leave sections
-        alone entirely when there is less than one step over of material on
-        them; the cleanup pass takes all of that off, with nose radius
-        compensation, so the finishing pass meets an even stock to leave.
-        """
+        """A contour pass at the stock to leave after roughing, taking off the staircase the passes leave."""
         contour = self.offset_contour(roughing_segment_group)
         # a window starting inside the stock has the part's front face on its
         # edge (e.g. a selected diameter): left to Face, as Profile does

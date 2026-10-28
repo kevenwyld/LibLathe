@@ -22,29 +22,9 @@ def recommended_passes(pitch):
 
 class ThreadOP(liblathe.op.base.BaseOP):
     """
-    Single-point threading along Z, from the window start (front) toward the
-    window end (back, toward the chuck).
-
-    The tool is programmed to the threading insert's tip (the point of its
-    profile): X at the tip, Z at the tip. The thread starts from
-    `thread_radius`, the surface it is cut into (the major radius of an
-    external thread, the bore's radius for an internal one), and goes
-    `thread_depth` deep (radially).
-
-    `passes` sets how many infeed passes reach the full depth (0: the
-    recommended number for the pitch), unless first_depth is given.
-    Pass n is first_depth * n ** (1 / degression) deep: degression 1.5 (the
-    default) is a gentle schedule with a light first pass, 2 constant area
-    (the first pass deepest), 1 constant depth; never less than min_depth deeper than the pass
-    before, the last at the full depth, followed by spring_passes at the full
-    depth. Each pass is shifted along the cut (toward the chuck) by its depth
-    times tan(infeed_angle), so the leading flank does the cutting (29.5 is
-    the modified flank infeed, 30 the flank, 0 radial). Every pass starts
-    lead_in in front of the thread, so Z is at speed when it reaches it.
-
-    Output: explicit passes (rapid to the start, rapid to depth, G33 along Z
-    at the pitch, rapid out, back to the start), or, with `canned`, one
-    LinuxCNC G76 cycle with the same values.
+    Single-point threading along Z toward the chuck, programmed to the insert's sharp point, from
+    thread_radius to thread_depth deep. Pass n is first_depth * n ** (1 / degression) deep, shifted
+    along Z by depth * tan(infeed_angle). Output: G33 passes, or one G76 cycle with `canned`.
     """
 
     needs_tool = False
@@ -140,15 +120,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
 
     def _front_room(self, depth):
         """
-        The longest lead-in the part in front of the thread leaves room for,
-        and the Z of the part that limits it (None, None: no limit). Every
-        pass runs from the lead-in to the thread at its depth, so its tip
-        needs the part below the deepest pass's tip all the way, and its
-        tailstock-side flank, just ahead of the tip, needs the part under
-        that flank: part h above the tip is clear of an insert whose tip is
-        more than min(h * slope, half width) behind it. (A thread behind a
-        neck: the insert drops in in the neck and threads back into the
-        shoulder.)
+        (longest lead-in the part in front leaves room for, Z of the part limiting it), or (None, None).
+        Part h above the deepest tip is clear of an insert more than min(h * slope, half width) behind it.
         """
         tip = self.thread_radius - depth
         half, slope = self._insert_profile()
@@ -196,14 +169,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
 
     def _check_clearance(self, depth):
         """
-        Keep the insert clear of the part behind the thread (external
-        threads; in front of it the lead-in is fitted to the part, see
-        _front_room). Only the part is checked: where it is held (the
-        chuck, a collet, a fixture) is up to the operator, not assumed from
-        the stock. Behind the thread's end the insert's chuck-side flank stops: its
-        profile (tool_angle) rises from the tip up to its half width
-        (tool_width), then it is straight, so the part there must stay under
-        that flank. Without a width only the tip is checked.
+        Refuse when the part behind the thread's end stands into the insert's chuck-side flank
+        (external threads). Only the part is checked, not where it is held.
         """
         tip = self.thread_radius - depth                # the deepest pass's tip
         half, slope = self._insert_profile()
@@ -214,11 +181,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
                 r = -x
                 if r <= tip + 1e-3 or z > front + 1e-6:
                     continue
-                # behind the end, the insert's flank cutting into the thread's
-                # own diameter is just how the thread ends; only part standing
-                # proud of that diameter (a shoulder) can be hit
-                # (a micron's tolerance: the outline comes from a section of the
-                # solid, and its corners are not exactly on the thread's radius)
+                # only part standing proud of the thread's diameter (a shoulder) can be hit;
+                # a micron's tolerance, as the section's corners are not exactly on the radius
                 if half > 0 and back - half - 1e-6 <= z <= back + 1e-6 and r > self.thread_radius + 1e-3:
                     # the flank is (r - tip) * slope behind the tip at height r
                     end = z + min((r - tip) * slope, half)
@@ -265,13 +229,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
                 params.update({'E': self.run_out, 'L': 2})
             cmds.append(Command('G76', params))
             return cmds
-        # Every pass is the deepest pass moved back along the infeed line: out
-        # by the depth it is short of the full depth and, with a flank
-        # infeed, toward the tailstock by that times tan(infeed angle), its end
-        # and run-out included (as LinuxCNC's G76 does: the whole pass offset
-        # by zoff). So each pass lies inside the finished groove to its end;
-        # with all passes ending at the same Z, the shallow ones' run-outs
-        # left grooves of their own beside the last one's.
+        # every pass is the deepest one moved back along the infeed line, end and run-out
+        # included (as G76's zoff), so it lies inside the finished groove to its end
         full = float(self.thread_depth)
         shift = math.tan(math.radians(self.infeed_angle))
         ends = []
@@ -284,25 +243,14 @@ class ThreadOP(liblathe.op.base.BaseOP):
         for (x, z), (z_full, z_end) in zip(self.passes, ends):
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
-            # FreeCAD's path display skips G33 (and keeps the tool where the
-            # pass started), so it would draw the retract below from the pass's
-            # start as a long tapered line. A G1 to where each G33 ended is a
-            # zero-length move on the machine, and in the display it draws
-            # the thread cut itself.
-            # (the move goes nowhere, so any feed will do; one is needed, as a
-            # control refuses G1 without a feed rate, and threading has none)
+            # FreeCAD's path display skips G33, so a zero-length G1 to each G33's end draws the cut;
+            # it needs some feed rate, as a control refuses G1 without one
             feed = self.hfeed if self.hfeed and self.hfeed > 0 else 1.0
             cmds.append(Command('G33', {'X': x, 'Z': z_full, 'K': self.pitch}))
             cmds.append(Command('G1', {'X': x, 'Z': z_full, 'F': feed}))
             if self.run_out > 0:
-                # the run-out: out to the crest, still synchronised with the
-                # spindle (the deepest pass by the thread's end). G33's K is
-                # the distance along the move per revolution, not along Z, so
-                # for the pitch along Z to stay the thread's on this sloping
-                # move K is the pitch times its length over its length along
-                # Z (as LinuxCNC's G76 does for its taper); with K the pitch,
-                # the run-out's pitch shrank and the exit drifted off the
-                # thread, by more for the deeper passes' longer run-outs
+                # run-out to the crest, still synchronised: G33's K is per revolution along the move,
+                # so K is scaled by the move's length over its length along Z (as G76's taper)
                 dz, dx = abs(z_full - z_end), abs(self.thread_radius - x)
                 k = self.pitch * math.hypot(dz, dx) / dz if dz > 1e-9 else self.pitch
                 cmds.append(Command('G33', {'X': self.thread_radius, 'Z': z_end, 'K': k}))

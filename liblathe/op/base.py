@@ -98,9 +98,7 @@ class BaseOP:
         self.leadout_angle = 315
         # TODO: implement invert_x to pass to segment_group().to_commands()
 
-    # The working window. Operations only move the tool inside it:
-    #   Z from z_end() (toward the chuck) to z_start() (toward the tailstock)
-    #   X from x_outer() (largest radius) to x_inner() (smallest radius)
+    # The working window: Z from z_end() (chuck side) to z_start(), X from x_outer() to x_inner().
     # X is negative internally (the part profile is on the -X side).
 
     def stock_xz(self):
@@ -110,12 +108,7 @@ class BaseOP:
         return float(sx), float(sz)
 
     def target_outline(self):
-        """
-        The surface the operation may cut to: the part, or with a negative
-        stock to leave (cutting under the model's size, e.g. a thread's major
-        diameter turned to its tolerance) the part shrunk by it. The checks
-        that a path stays clear of the part use this.
-        """
+        """The surface the op may cut to: the part, shrunk by any negative stock to leave. Used by the checks."""
         sx, sz = self.stock_xz()
         nx, nz = min(sx, 0.0), min(sz, 0.0)
         if nx == 0 and nz == 0:
@@ -126,12 +119,8 @@ class BaseOP:
 
     def offset_contour(self, segmentgroup, extra=0.0):
         """
-        Offset a contour (e.g. the defeatured part) by the stock to leave,
-        plus `extra` in both directions. Equal X and Z stock is the exact
-        offset (a disc: lines and arcs). Different X and Z stock is the
-        rectangle dilation (X stock on diameters, Z stock on faces), as a
-        fine polyline: a contour with stock left on it is never a final
-        surface.
+        The contour offset by the stock to leave plus `extra`: an exact offset when X and Z stock are
+        equal, otherwise a rectangle dilation (X on diameters, Z on faces) as a fine polyline.
         """
         sx, sz = self.stock_xz()
         sx, sz = sx + extra, sz + extra
@@ -173,12 +162,8 @@ class BaseOP:
 
     def lead_in_length(self):
         """
-        How far in front of the window's start the passes begin. As set; or
-        a clearance when the window starts at or in front of the stock;
-        when it starts inside the stock with only stock in front (e.g. a
-        diameter selected up to the part's front, the stock longer), a
-        clearance in front of the stock, cutting through that stock; with
-        part in front, 0: the passes are entered radially.
+        How far in front of the window the passes begin: as set; else a clearance, through any stock in
+        front of the window, or 0 (radial entry) when part of the model is in front.
         """
         if self.pass_lead_in is not None:
             lead = max(0.0, float(self.pass_lead_in))
@@ -285,12 +270,8 @@ class BaseOP:
 
     def safe_start(self, path):
         """
-        Moves from wherever the tool is to the start of the operation without
-        crossing the stock: straight out in X to the safe diameter (radially,
-        at the current Z), then along Z outside the stock. If the first cut
-        starts in front of the stock, stop at the safe Z in front of it;
-        otherwise go straight to the first cut's Z, outside the stock, so the
-        operation's own first move only travels in X.
+        Rapids to the op's start without crossing the stock: out to the safe X, then along Z to the safe Z
+        or, for a first cut inside the stock, to its Z.
         """
         first = next((c for c in path if c.get_movement() == 'G0' and 'Z' in c.get_params()), None)
         z = self.safe_z()
@@ -299,11 +280,7 @@ class BaseOP:
         return [Command('G0', {'X': self.safe_x()}), Command('G0', {'X': self.safe_x(), 'Z': z})]
 
     def safe_end(self):
-        """
-        Leave the operation at the safe position: straight out in X at the
-        current Z, then to the safe Z in front of the stock, ready for the
-        next operation or a tool change.
-        """
+        """Rapids to the safe position: out in X at the current Z, then to the safe Z in front of the stock."""
         return [Command('G0', {'X': self.safe_x()}), Command('G0', {'X': self.safe_x(), 'Z': self.safe_z()})]
 
     def generate_path(self):
@@ -335,11 +312,8 @@ class BaseOP:
 
     def contour_path(self, segmentgroup, error="Calculated contour path intersects part", drop_front_face=False):
         """
-        Turn a contour (a path where the cutting edge touches the part, e.g. an
-        offset of the defeatured part) into a finished tool path: check it
-        does not cut into the part, apply nose radius compensation, clip it to
-        the working window and add a lead in. Returns None when nothing of the
-        contour is inside the window.
+        A contour as a tool path: checked against the part, nose compensated, clipped to the window,
+        with a lead-in. None when nothing of it is inside the window.
         """
         # use a small offset to reduce false positives
         if segmentgroup.intersects_group(self.target_outline().offset_path(-0.001)):
@@ -361,25 +335,9 @@ class BaseOP:
 
     def clip_box(self):
         """
-        The box the tip path is clipped to: (x_min, x_max, z_min, z_max).
-
-        The path is the path of the imaginary tip; the nose circle spans one
-        nose diameter from the tip toward the tailstock (+Z) and away from
-        the axis. So clipping the tip keeps the whole nose behind z_end()
-        (the chuck side) and above x_inner() (the minimum diameter), and the
-        outer limit is shrunk by the nose diameter so the nose stays inside
-        x_outer(). At z_start() the nose may reach up to one nose diameter
-        past the limit: that keeps the edges of selected faces reachable, and
-        the path itself never gouges the part.
-
-        Only real limits clip. Beyond the stock front and outside the stock
-        diameter the path is in air, so those sides stay open unless the
-        window is set inside the stock. Without a minimum diameter the tip
-        may pass the axis by one nose radius, which puts the nose's centre
-        on the axis (a ball or point is finished to the centre), and no
-        further: past that the nose is on the far side of the turning part,
-        where the insert would cut it with its back (an offset pass of a
-        ball's end reached 3.6 mm past the axis and flattened the ball).
+        The box the tip path is clipped to, (x_min, x_max, z_min, z_max): the whole nose stays inside
+        z_end(), x_inner() and x_outer(); the tip may pass z_start() by a nose diameter and the axis by a
+        nose radius. Sides in air (stock front, stock diameter) stay open.
         """
         inf = float("inf")
         d = 2 * self.nose_radius()
@@ -395,18 +353,8 @@ class BaseOP:
 
     def nose_compensate(self, segmentgroup):
         """
-        Convert a profile path (where the cutting edge must touch the part) into
-        the path of the tool's imaginary tip, so the round nose of the insert
-        lands on dimension on tapers and arcs, not just on diameters and faces.
-
-        nose centre path   = profile offset outward by the nose radius
-        imaginary tip path = nose centre shifted by one nose radius toward the
-                             axis (+X internally, the part is on -X) and toward
-                             the chuck (-Z)
-
-        This matches the usual touch-off: X set on a turned diameter and Z on a
-        faced end, both measured to the imaginary tip. Straight diameters and
-        faces are unchanged; tapers and arcs are corrected.
+        Profile path to imaginary-tip path: offset outward by the nose radius, then shift by one nose
+        radius toward the axis (+X) and the chuck (-Z). Diameters and faces are unchanged.
         """
         r = getattr(self.tool, "nose_radius", None) or 0
         if not self.nose_comp or r <= 0:
@@ -470,15 +418,8 @@ class BaseOP:
 
 def _without_air_tail(segmentgroup, x_air, tol=0.05):
     """
-    The path without the segments at its end that lie wholly outside the
-    stock's radius (X below x_air, the stock's outer X; X is negative
-    internally) by more than tol: a bar's size tolerance, so a pass on or
-    near the stock's surface stays and still cleans up bar a little over
-    its nominal size. The path is the imaginary tip, the nose's point
-    nearest the axis, so there the whole nose is in air: an offset pass
-    that has run out along a shoulder past the stock would otherwise carry
-    on round the part's outer corner before retracting. The segment that
-    leaves the stock is kept, so the pass ends clear of it.
+    The path without trailing segments wholly outside the stock radius by more than tol (a bar's size
+    tolerance). The segment that leaves the stock is kept, so the pass ends clear of it.
     """
     from liblathe.base.segmentgroup import _sample_points
     segs = segmentgroup.get_segments()
@@ -494,13 +435,7 @@ def _without_air_tail(segmentgroup, x_air, tol=0.05):
 
 
 def _without_front_face(segmentgroup):
-    """
-    The path without its front face: the flat segments (along X, at one Z)
-    it starts with on or past the axis (offset_path() always starts a
-    contour on the axis, and nose compensation moves that start past it).
-    The path then starts at the front corner; a front chamfer or radius is
-    not flat and is kept.
-    """
+    """The path without the flat front-face segments it starts with; a front chamfer or radius is kept."""
     segs = segmentgroup.get_segments()
     i = 0
     while (i < len(segs) and segs[i].bulge == 0 and abs(segs[i].start.Z - segs[i].end.Z) < 1e-6

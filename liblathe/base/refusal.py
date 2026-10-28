@@ -1,12 +1,6 @@
 """
-Refusals that can be waived.
-
-An operation refuses a path it can make but that a check finds wrong (it
-would cut into the part, the insert would hit it) by raising a Refusal
-naming the check. Told to ignore that check (its name in the operation's
-ignored_checks), the operation records a warning instead and carries on
-with the path it was about to refuse. Refusals where there is no sensible
-path (a zero pitch, no tool) stay plain errors.
+Refusals that can be waived: a check raises Refusal(check, reason); a check named in an op's
+ignored_checks becomes a warning and the path is made anyway. Unusable inputs stay plain errors.
 """
 
 # the checks that can be waived, and what the operation does instead

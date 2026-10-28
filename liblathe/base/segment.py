@@ -28,12 +28,7 @@ class Segment:
         return math.atan(abs(self.bulge)) * 4
 
     def set_bulge(self, angle):
-        """
-        Sets the bulge of the arc (tan(angle/4))
-        Negative bulge = clockwise
-        Positive bulge = anticlockwise
-        angle in radians
-        """
+        """Set the bulge from the included angle in radians: tan(angle / 4); negative = clockwise."""
 
         self.bulge = math.tan(angle / 4)
 
