@@ -164,5 +164,12 @@ class test_point(unittest.TestCase):
         self.assertEqual(projected.Z, 0)
 
 
+    def test_is_same_tolerance(self):
+        # round(x, 5) put these on either side of a rounding boundary
+        self.assertTrue(Point(0.123454, 0, 0).is_same(Point(0.123456, 0, 0)))
+        self.assertFalse(Point(1.0, 0, 0).is_same(Point(1.00002, 0, 0)))
+        self.assertFalse(Point(0, 0, 0).is_same(None))
+
+
 if __name__ == '__main__':
     unittest.main()

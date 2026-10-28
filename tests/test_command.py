@@ -33,5 +33,11 @@ class test_command(unittest.TestCase):
         self.assertEqual(string, 'G0 X-20 Y0 Z6 F10')
 
 
+    def test_default_params_not_shared(self):
+        a, b = Command('G18'), Command('G18')
+        a.get_params()['X'] = 1
+        self.assertEqual(b.get_params(), {})
+
+
 if __name__ == '__main__':
     unittest.main()

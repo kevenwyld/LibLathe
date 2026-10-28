@@ -13,9 +13,9 @@ from liblathe.base.point import Point
 # https://www.afralisp.net/archive/lisp/Bulges2.htm
 
 class Segment:
-    def __init__(self, start=Point(0.0, 0.0, 0.0), end=Point(0.0, 0.0, 0.0), bulge=0.0):
-        self.start = start
-        self.end = end
+    def __init__(self, start=None, end=None, bulge=0.0):
+        self.start = Point(0.0, 0.0, 0.0) if start is None else start
+        self.end = Point(0.0, 0.0, 0.0) if end is None else end
         self.bulge = bulge
 
     def get_angle(self):
@@ -114,7 +114,7 @@ class Segment:
 
     def get_sagitta(self):
         """Returns the arc height, typically referred to as the sagitta"""
-        return self.get_length / 2 * self.bulge
+        return self.get_length() / 2 * self.bulge
 
     def get_apothem(self):
         """Returns apothem. distance from arc center to cord midpoint"""
@@ -224,10 +224,10 @@ class Segment:
             intersect, pt = self.intersect_line_line(seg, extend)
         elif self.bulge != 0 and seg.bulge != 0:
             intersect, pt = self.intersect_circle_circle(seg, extend)
-        elif self.bulge != 0 or seg.bulge != 0 and self.bulge == 0 or seg.bulge == 0:
+        elif (self.bulge != 0 and seg.bulge == 0) or (self.bulge == 0 and seg.bulge != 0):
             intersect, pt = self.intersect_circle_line(seg, extend)
         else:
-            print('segment.py - Intersect Error with passed segments')
+            raise ValueError("Cannot intersect segments with bulges %r and %r" % (self.bulge, seg.bulge))
 
         # TODO: this should return a nt type not Point() or []
         return intersect, pt
@@ -367,9 +367,12 @@ class Segment:
         """Determine if point is on self"""
 
         if self.bulge == 0:
-            # Line
-            # TODO: Move the line code here
-            pass
+            # line: within 1e-5 of the closest point of the segment
+            dx, dz = self.end.X - self.start.X, self.end.Z - self.start.Z
+            length2 = dx * dx + dz * dz
+            t = 0.0 if length2 == 0 else ((point.X - self.start.X) * dx + (point.Z - self.start.Z) * dz) / length2
+            t = min(1.0, max(0.0, t))
+            return math.hypot(point.X - (self.start.X + t * dx), point.Z - (self.start.Z + t * dz)) < 1e-5
         else:
             # Arc
             c = self.get_centre_point()

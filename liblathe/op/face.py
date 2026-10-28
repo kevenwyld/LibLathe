@@ -1,5 +1,3 @@
-import math
-
 import liblathe.op.base
 from liblathe.base.point import Point
 from liblathe.base.segment import Segment

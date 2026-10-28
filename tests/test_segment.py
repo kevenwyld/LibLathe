@@ -1,5 +1,4 @@
 import os
-from re import A
 import sys
 import math
 import unittest
@@ -312,6 +311,37 @@ class test_segment(unittest.TestCase):
 
         intersect, pts = self.arcSegment2.intersect(self.lineSegment3)
         self.assertFalse(intersect)
+
+
+    def test_default_points_not_shared(self):
+        a, b = Segment(), Segment()
+        self.assertIsNot(a.start, b.start)
+        self.assertIsNot(a.end, b.end)
+
+    def test_get_sagitta(self):
+        semicircle = Segment(Point(0, 0, 0), Point(0, 0, 2), 1.0)
+        self.assertAlmostEqual(semicircle.get_sagitta(), 1.0)
+        self.assertEqual(Segment(Point(0, 0, 0), Point(0, 0, 2)).get_sagitta(), 0)
+
+    def test_point_on_line_segment(self):
+        line = Segment(Point(0, 0, 0), Point(-10, 0, -10))
+        self.assertTrue(line.point_on_segment(Point(-5, 0, -5)))
+        self.assertTrue(line.point_on_segment(Point(-5, 0, -5.000001)))
+        self.assertTrue(line.point_on_segment(Point(0, 0, 0)))
+        self.assertFalse(line.point_on_segment(Point(-5, 0, -5.001)))
+        self.assertFalse(line.point_on_segment(Point(-11, 0, -11)))
+        self.assertTrue(Segment(Point(1, 0, 1), Point(1, 0, 1)).point_on_segment(Point(1, 0, 1)))
+
+    def test_intersect_unknown_bulge(self):
+        class Neither:
+            def __eq__(self, other):
+                return False
+
+            def __ne__(self, other):
+                return False
+        odd = Segment(Point(0, 0, 0), Point(0, 0, 1), Neither())
+        with self.assertRaises(ValueError):
+            odd.intersect(Segment(Point(-1, 0, 0), Point(1, 0, 1)))
 
 
 if __name__ == '__main__':

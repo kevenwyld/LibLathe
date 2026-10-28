@@ -33,11 +33,7 @@ class Point:
         """Returns True if the coordinates are the same"""
 
         if pt:
-            if round(self.X, 5) == round(pt.X, 5):
-                if round(self.Y, 5) == round(pt.Y, 5):
-                    if round(self.Z, 5) == round(pt.Z, 5):
-                        return True
-
+            return abs(self.X - pt.X) < 1e-5 and abs(self.Y - pt.Y) < 1e-5 and abs(self.Z - pt.Z) < 1e-5
         return False
 
     def sub(self, pt):

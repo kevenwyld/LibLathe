@@ -1,7 +1,7 @@
 class Command:
-    def __init__(self, movement=None, params={}):
+    def __init__(self, movement=None, params=None):
         self.movement = movement
-        self.params = params
+        self.params = {} if params is None else params
 
     def get_movement(self):
         """Returns the movement type for this command. (eg, GO, G1, G2, G3)"""

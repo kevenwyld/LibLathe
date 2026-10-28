@@ -76,7 +76,6 @@ def replace_corners(group, picks):
     """
     edges = _edges(group)
     corners = {c["index"]: c for c in find_corners(group)}
-    orient = _orientation(edges)
     starts = [e[0] for e in edges]
     ends = [e[1] for e in edges]
     joins = {}

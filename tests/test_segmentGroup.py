@@ -223,5 +223,11 @@ class test_segment_group(unittest.TestCase):
         self.assertEqual(short.count(), 1000)
 
 
+    def test_intersects_group_false(self):
+        self.segmentGroup.add_segment(self.lineSegment1)
+        self.segmentGroup2.add_segment(self.lineSegment2)
+        self.assertIs(self.segmentGroup.intersects_group(self.segmentGroup2), False)
+
+
 if __name__ == '__main__':
     unittest.main()
