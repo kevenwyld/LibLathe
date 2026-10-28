@@ -37,6 +37,12 @@ class SegmentGroup:
 
         self.segments.extend(segmentgroup.get_segments())
 
+    def copy(self):
+        """A new group of copies of the segments (the Points are shared, as segments replace rather than edit them)."""
+        out = SegmentGroup()
+        out.segments = [Segment(seg.start, seg.end, seg.bulge) for seg in self.segments]
+        return out
+
     def count(self):
         """Return the number of segments in the segmentgroup"""
 
@@ -167,8 +173,10 @@ class SegmentGroup:
             if kept and kept[-1].end.distance_to(s.start) < 1e-3 and not kept[-1].end.is_same(s.start):
                 s = Segment(kept[-1].end, s.end, s.bulge)
             kept.append(s)
-        self.segments = kept
-        segments = self.get_segments()
+        # a local group: self.segments is left as it was
+        path = SegmentGroup()
+        path.segments = kept
+        segments = kept
 
         cmds = []
         # TODO: Move the G18 to a PATH Class? it doesn't need to be added to every segment group
@@ -176,7 +184,7 @@ class SegmentGroup:
         cmds.append(cmd)
 
         for seg in segments:
-            min_x_retract = self.get_min_retract_x(seg, part_segment_group)
+            min_x_retract = path.get_min_retract_x(seg, part_segment_group)
             x_retract = min_x_retract - (step_over * finish_passes if retract is None else float(retract))
             z_retract = segments[0].start.Z
 
@@ -192,7 +200,7 @@ class SegmentGroup:
 
             # handle unconnected segments (lines and arcs): retract, move
             # across at the retract diameter, then feed in to the start
-            if not self.previous_segment_connected(seg) and segments.index(seg) != 0:
+            if not path.previous_segment_connected(seg) and segments.index(seg) != 0:
                 pt = get_pos(seg.start)
                 # rapid to the x_min
                 params = {'X': x_retract, 'F': hSpeed}
@@ -319,7 +327,7 @@ class SegmentGroup:
         # TODO Sort Edges to ensure they're in order.
 
         if step_over == 0:
-            return self
+            return self.copy()
 
         segs = self.get_segments()
         segmentgroup = SegmentGroup()

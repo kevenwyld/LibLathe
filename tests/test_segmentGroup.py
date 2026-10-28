@@ -156,5 +156,39 @@ class test_segment_group(unittest.TestCase):
         self.assertEqual(cmds[4].params, {'X': -97.0, 'Z': 0, 'F': 100})
 
 
+    def _snapshot(self, group):
+        return [(id(seg), seg.start.X, seg.start.Z, seg.end.X, seg.end.Z, seg.bulge) for seg in group.segments]
+
+    def _group_with_short_pieces(self):
+        group = SegmentGroup()
+        a, b, c = Point(0, 0, 10), Point(-5, 0, 10), Point(-5, 0, 10.0000001)
+        for seg in (Segment(a, b), Segment(b, c), Segment(Point(-5, 0, 10.0005), Point(-5, 0, 0)),
+                    Segment(Point(-5, 0, 0), Point(0, 0, 0))):
+            group.add_segment(seg)
+        return group
+
+    def test_to_commands_leaves_the_group_alone(self):
+        group = self._group_with_short_pieces()
+        segments, before = group.segments, self._snapshot(group)
+        cmds = group.to_commands(group, group.boundbox(), self.step_over, self.finish_passes, self.hfeed, self.vfeed)
+        self.assertTrue(cmds)
+        self.assertIs(group.segments, segments)
+        self.assertEqual(self._snapshot(group), before)
+        again = group.to_commands(group, group.boundbox(), self.step_over, self.finish_passes, self.hfeed, self.vfeed)
+        self.assertEqual([(c.movement, c.params) for c in cmds], [(c.movement, c.params) for c in again])
+
+    def test_offset_path_zero_is_a_copy(self):
+        group = self._group_with_short_pieces()
+        segments, before = group.segments, self._snapshot(group)
+        copy = group.offset_path(0)
+        self.assertIsNot(copy, group)
+        self.assertIsNot(copy.segments, group.segments)
+        self.assertTrue(all(a is not b for a, b in zip(copy.segments, group.segments)))
+        copy.segments[0].end = Point(-9, 0, 9)
+        copy.add_segment(Segment(Point(0, 0, 0), Point(0, 0, -1)))
+        self.assertIs(group.segments, segments)
+        self.assertEqual(self._snapshot(group), before)
+
+
 if __name__ == '__main__':
     unittest.main()
