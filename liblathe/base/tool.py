@@ -33,7 +33,7 @@ class Tool:
     def set_tool_from_string(self, tool_string):
 
         if not len(tool_string) == 11:
-            raise ValueError("Tool Input String Incomplete")
+            raise ValueError("An ISO tool code has 11 characters, e.g. DCMT070204R")
 
         # TODO: Validate the values passed in create a valid tool
         shape = tool_string[0]
@@ -51,7 +51,7 @@ class Tool:
         if (isinstance(angle, int) or isinstance(angle, float)) and angle > 0 and angle < 90:
             self.tip_angle = angle
         else:
-            raise Warning("Tool rotation must be a number [0 - 90]")
+            raise Warning("Tip angle must be between 0 and 90 degrees")
 
     def set_edge_length(self, edge_length):
         """Set the tools edge edge_length"""
@@ -59,7 +59,7 @@ class Tool:
         if (isinstance(edge_length, int) or isinstance(edge_length, float)) and edge_length > 0:
             self.edge_length = edge_length
         else:
-            raise Warning("Tool edge length must be a number > 0")
+            raise Warning("Edge length must be above zero")
 
     def set_nose_radius(self, radius):
         """Set the tools nose radius"""
@@ -67,7 +67,7 @@ class Tool:
         if (isinstance(radius, int) or isinstance(radius, float)) and radius > 0:
             self.nose_radius = radius
         else:
-            raise Warning("Tool nose radius must be a number > 0")
+            raise Warning("Nose radius must be above zero")
 
     def set_direction(self, direction):
         """ Set the tools cutting direction R-N-L"""
@@ -75,7 +75,7 @@ class Tool:
         if direction in ["R", "N", "L"]:
             self.direction = direction
         else:
-            raise Warning("Tool direction not valid")
+            raise Warning("Direction must be R, L or N")
 
     def set_rotation(self, rotation):
         """ Set the tools cutting rotation"""
@@ -83,14 +83,14 @@ class Tool:
         if (isinstance(rotation, int) or isinstance(rotation, float)) and rotation > 0 and rotation < 360:
             self.tool_rotation = rotation
         else:
-            raise Warning("Tool rotation must be a number [0 - 360]")
+            raise Warning("Rotation must be between 0 and 360 degrees")
 
     def set_orientation(self, orientation):
         """ Set the tools cutting rotation"""
         if orientation in [ToolOri.X, ToolOri.Z]:
             self.orientation = orientation
         else:
-            raise Warning("Tool orientation not valid")
+            raise Warning("Orientation must be ToolOri.X or ToolOri.Z")
 
     def get_tool_cutting_angle(self):
         """
@@ -111,7 +111,7 @@ class Tool:
         if self.edge_length:
             return self.edge_length / 4
         else:
-            raise Warning("Tool edge length not set")
+            raise Warning("Edge length is not set")
 
     def get_width(self):
         """
@@ -173,9 +173,9 @@ class Tool:
                 # print("shape Size: ", edgeedge_length)
                 return edge_length
             except(KeyError):
-                raise Warning("Tool length code not valid")
+                raise Warning("Unknown edge length code for this shape")
         else:
-            raise Warning("Tool shape not valid")
+            raise Warning("Unknown insert shape letter")
 
     def get_nose_radius(self, radius):
         """
@@ -202,7 +202,7 @@ class Tool:
             # print("nose radius: ", radius)
             return radius
         except(KeyError):
-            raise Warning("Tool radius not valid")
+            raise Warning("Unknown nose radius code")
 
     def get_cutting_direction(self):
         """

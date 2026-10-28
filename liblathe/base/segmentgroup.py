@@ -539,8 +539,7 @@ class SegmentGroup:
         if check and self.offset_path(-0.0001).intersects_group(segs_out):
             # segs_out.create_freecad_shape("defeatured_part_segment_group")
             from liblathe.base.refusal import Refusal
-            raise Refusal("part-defeaturing-failed", "Part defeaturing failed: the outline the operation can follow "
-                                                     "cuts into the part")
+            raise Refusal("part-defeaturing-failed", "The outline this insert can follow cuts into the part")
 
         return segs_out
 
@@ -598,7 +597,7 @@ class SegmentGroup:
         count = self.count()
 
         if count == 0:
-            raise ValueError("Input Geometry Invalid")
+            raise ValueError("The part outline has no segments")
 
         # check the first segment starts at x = 0
         start_segment = self.segments[0]
@@ -612,7 +611,7 @@ class SegmentGroup:
                 new_start_seg = Segment(new_start_point, start_segment.start)
                 self.insert_segment(new_start_seg, 0)
                 if self.count() != count + 1:
-                    raise ValueError("Segmentgroup Validation Failed")
+                    raise ValueError("Could not close the part outline to the axis")
 
         # check the last segment end at x = 0
         count = self.count()
@@ -630,7 +629,7 @@ class SegmentGroup:
         import Part
 
         if self.count == 0:
-            raise ValueError("Input Segment Group")
+            raise ValueError("The segment group is empty")
 
         part_edges = []
         for segment in self.segments:

@@ -464,7 +464,7 @@ class test_Thread(unittest.TestCase):
 
     def test_shoulder_suggests_where_to_end(self):
         """The refusal says where the thread must end to clear the insert's flank."""
-        with self.assertRaisesRegex(ValueError, r"end the thread at Z -18\.\d+ or above"):
+        with self.assertRaisesRegex(ValueError, r"End the thread at Z -18\.\d+ or above"):
             R.make_op("thread", "shoulder", dict(M12, S=0.0, F=-20.0)).get_gcode()
 
     def test_feature_in_front_refused(self):
@@ -487,7 +487,7 @@ class test_Thread(unittest.TestCase):
         self.assertLess(max(z for z in starts if z < -1.0), -8.0 + 1e-6)
 
     def test_behind_a_short_neck_set_lead_in_too_long(self):
-        with self.assertRaisesRegex(ValueError, r"lead-in of at most 2\.\d+ fits"):
+        with self.assertRaisesRegex(ValueError, r"At most 2\.\d+ fits"):
             R.make_op("thread", "neck", dict(M12, S=-11.0, F=-25.0, lead_in=4.0)).get_gcode()
 
     def test_behind_a_long_neck_lead_in_unchanged(self):

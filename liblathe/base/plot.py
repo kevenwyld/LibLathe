@@ -35,7 +35,7 @@ class Plot:
         if os.path.exists(path):
             self.file_location = path
         else:
-            raise Warning('Given file path does not exist!')
+            raise Warning('Output folder does not exist')
 
     def set_transparency(self):
         """Set transparency on/off"""
@@ -47,7 +47,7 @@ class Plot:
             try:
                 self.background = colour
             except Exception:
-                raise Warning('Unknown colour! Colour is RGB. For example (255, 255, 255)')
+                raise Warning('Colour must be an RGB tuple, e.g. (255, 255, 255)')
 
     def set_path_colour(self, g_number, colour):
         """Set the colour of g path. For example G0, (255,255,255)"""
@@ -62,9 +62,9 @@ class Plot:
                 elif g_number.upper().startswith('G3'):
                     self.g3_colour = colour
             except Exception:
-                raise Warning('Unknown value! Please use for example G0, (255,255,255)')
+                raise Warning('Expected a move name and an RGB tuple, e.g. G0, (255, 255, 255)')
         else:
-            raise Warning('Unknown colour! Colour is RGB. For example (255, 255, 255)')
+            raise Warning('Colour must be an RGB tuple, e.g. (255, 255, 255)')
 
     def flip_image_horizontal(self):
         """Flip image horizontally(left to right).Turns On/Off"""

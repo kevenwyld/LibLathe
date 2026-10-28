@@ -187,7 +187,7 @@ class BaseOP:
             if hasattr(self, param):
                 setattr(self, param, params[param])
             else:
-                raise Warning("Attempting to set undefined parameter '%s'" % param)
+                raise Warning("Unknown operation parameter '%s'" % param)
 
     def get_params(self):
         """Return operations parameters"""
@@ -215,7 +215,7 @@ class BaseOP:
         """Base function for all turning operations"""
 
         if self.needs_tool and self.tool is None:
-            raise Warning("Tool is unset")
+            raise Warning("No tool set for the operation")
         self.apply_edge_break()
         # an unset (zero) vertical feed would put F0 on the moves into the
         # cut; use the horizontal feed for them instead
@@ -252,9 +252,8 @@ class BaseOP:
         for z_from, z_to, depth in collision.check(path, self.tool, self.target_outline()):
             span = "at Z %.3f" % z_from if abs(z_from - z_to) < 1e-6 else "between Z %.3f and Z %.3f" % (z_from, z_to)
             self.warnings.append(
-                "The insert would hit the part with an edge or its body (not the cutting nose) %s, up to %.2f deep: "
-                "the part there is steeper or tighter than this insert can follow. Use an insert with a smaller "
-                "tip angle or a different rotation, or limit the operation there" % (span, depth))
+                "The insert's edge or body (not its nose) would hit the part %s, up to %.2f deep. Use a smaller "
+                "tip angle or another rotation, or keep the operation away from there" % (span, depth))
 
     def radial_clearance(self):
         """The radial clearance: clearance_x if set, else the clearance."""

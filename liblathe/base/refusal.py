@@ -6,12 +6,12 @@ ignored_checks becomes a warning and the path is made anyway. Unusable inputs st
 # the checks that can be waived, and what the operation does instead
 CHECKS = {
     "path-intersects-part": "the path as calculated",
-    "part-defeaturing-failed": "the simplified outline as it came out",
-    "face-cuts-part": "faces to the plane and diameter set",
+    "part-defeaturing-failed": "the outline as simplified",
+    "face-cuts-part": "faces to the Z and Min Diameter set",
     "thread-front-clearance": "the lead-in as set, or three pitches",
     "thread-lead-in-too-long": "the lead-in as set",
-    "thread-hits-behind-end": "ends the thread where it is set",
-    "groove-narrower-than-blade": "cuts the blade's width",
+    "thread-hits-behind-end": "ends the thread where set",
+    "groove-narrower-than-blade": "cuts one insert width",
 }
 
 

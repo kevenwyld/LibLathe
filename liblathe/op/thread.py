@@ -53,13 +53,13 @@ class ThreadOP(liblathe.op.base.BaseOP):
     def generate_path(self):
         self.warnings = []
         if self.pitch <= 0:
-            raise ValueError("The thread pitch must be greater than zero")
+            raise ValueError("Pitch must be above zero")
         if self.thread_depth <= 0:
-            raise ValueError("The thread depth must be greater than zero")
+            raise ValueError("Thread depth must be above zero")
         if self.thread_radius <= 0:
-            raise ValueError("The thread diameter must be greater than zero")
+            raise ValueError("Thread diameter must be above zero")
         if self.internal and self.thread_depth >= self.thread_radius * 2:
-            raise ValueError("The thread is deeper than the bore is wide")
+            raise ValueError("Thread depth is more than the bore's radius")
 
         depth = float(self.thread_depth)
         self.z_front = self.z_start()
@@ -68,7 +68,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
             self.z_back = max(self.z_back, self.z_front - self.thread_length)
         self.run_out = max(0.0, float(self.run_out or 0.0))
         if self.run_out >= self.z_front - self.z_back - 1e-9:
-            raise ValueError("The run-out (%.3f) is as long as the thread (%.3f) or longer"
+            raise ValueError("Run-out %.3f is not shorter than the thread (%.3f)"
                              % (self.run_out, self.z_front - self.z_back))
         # where the full-depth thread ends: the run-out tapers out from here
         self.z_full = self.z_back + self.run_out
@@ -92,7 +92,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
                 break
             n += 1
             if n > 1000:
-                raise ValueError("Too many threading passes: check the first and minimum pass depths")
+                raise ValueError("Over 1000 passes: raise First pass depth or Min pass depth")
         depths += [depth] * max(0, int(self.spring_passes))
         self.depths = depths
 
@@ -148,23 +148,19 @@ class ThreadOP(liblathe.op.base.BaseOP):
         if room <= 1e-3:
             self.refuse(
                 "thread-front-clearance",
-                "Right in front of the thread the part stands above the thread's root (radius %.3f), at Z %.3f: "
-                "every pass starts in front of the thread at its depth and would cut into it, whatever the lead-in. "
-                "A single-point thread needs the part in front of it below the root (a chamfer, a neck or a "
-                "relief groove)" % (tip, where))
+                "The part at Z %.3f stands above the thread's root (radius %.3f), so every pass would cut into it. "
+                "Chamfer, neck or groove the part in front of the thread to below the root" % (where, tip))
             return lead                              # waived: the lead-in as set, or three pitches
         if self.lead_in > 0:
             self.refuse(
                 "thread-lead-in-too-long",
-                "The lead-in (%.3f) is longer than the room in front of the thread: the part stands above the "
-                "thread's root (radius %.3f) at Z %.3f. A lead-in of at most %.3f fits"
-                % (lead, tip, where, math.floor(room * 1000) / 1000))
+                "Lead-in %.3f does not fit: the part at Z %.3f stands above the thread's root (radius %.3f). "
+                "At most %.3f fits" % (lead, where, tip, math.floor(room * 1000) / 1000))
             return lead                              # waived: the lead-in as set
         room = math.floor(room * 1000) / 1000
         self.warnings.append(
-            "Lead-in shortened to %.3f (from %.3f, three pitches): in front of the thread the part stands above "
-            "the thread's root at Z %.3f. Every pass starts that far in front of the thread, so the Z axis has only "
-            "that long to come up to speed: check the start of the thread" % (room, lead, where))
+            "Lead-in shortened to %.3f from %.3f: the part at Z %.3f stands above the thread's root. Z has less "
+            "room to reach speed, so check the start of the thread" % (room, lead, where))
         return room
 
     def _check_clearance(self, depth):
@@ -193,9 +189,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
             latest_end = math.ceil(latest_end * 1000 - 1e-6) / 1000
             self.refuse(
                 "thread-hits-behind-end",
-                "The insert would hit the part behind the end of the thread (at Z %.3f): end the thread at "
-                "Z %.3f or above (a thread length of at most %.3f), or cut a relief groove there"
-                % (back, latest_end, front - latest_end))
+                "The insert would hit the part behind the thread's end at Z %.3f. End the thread at Z %.3f or "
+                "above (length at most %.3f), or cut a relief groove" % (back, latest_end, front - latest_end))
 
     def _max_radius_between(self, z1, z2):
         """Largest part radius between two Z values (None where there is no part)."""

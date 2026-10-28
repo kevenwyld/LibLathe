@@ -52,11 +52,10 @@ class GrooveOP(liblathe.op.base.BaseOP):
 
         w = float(self.groove_width)
         if w <= 0:
-            raise ValueError("Grooving tool width must be greater than zero")
+            raise ValueError("The grooving insert's width must be above zero")
         if float(self.corner_radius) > w / 2 + 1e-9:
             self.warnings.append(
-                "The corner radius (%.3f) is more than half the width (%.3f); using half the width, "
-                "i.e. a full radius" % (float(self.corner_radius), w))
+                "Corner radius %.3f is more than half the width (%.3f): a full radius is used" % (float(self.corner_radius), w))
         r = max(0.0, min(float(self.corner_radius), w / 2))
         dz = self.resolution
 
@@ -66,7 +65,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         z_hi = top - w
         if z_hi < z_lo - 1e-9:
             self.refuse("groove-narrower-than-blade",
-                        "The Z range (%.3f) is narrower than the grooving tool (%.3f)" % (top - z_lo, w))
+                        "The Z range (%.3f) is narrower than the insert (%.3f)" % (top - z_lo, w))
             # waived: one plunge, the blade's width from the back of the range
             z_hi = z_lo
 
@@ -114,18 +113,16 @@ class GrooveOP(liblathe.op.base.BaseOP):
         deep = final < r_min - 1e-9
         if deep.any():
             self.warnings.append(
-                "The part is deeper than the tool can reach: material is left between Z %.3f and "
-                "Z %.3f. The grooving depth is measured from the max diameter (default: the stock); "
-                "if the surface has already been turned smaller, set Max Diameter to that diameter. "
-                "A Min Diameter also limits the depth." % (z_ref[deep].min(), z_ref[deep].max()))
+                "Material left between Z %.3f and Z %.3f: deeper than the insert's grooving depth from Max "
+                "Diameter. If the surface was turned smaller already, set Max Diameter to it"
+                % (z_ref[deep].min(), z_ref[deep].max()))
         final = np.maximum(final, r_min)
 
         passes = max(0, int(self.finish_passes))
         allowance = self.finish_allowance if passes else 0.0
         if passes and self.turning_depth > 0 and allowance > self.turning_depth + 1e-9:
             self.warnings.append(
-                "The finish allowance (%.3f) is more than the tool's turning depth (%.3f)"
-                % (allowance, self.turning_depth))
+                "Finish allowance %.3f is more than the insert's turning depth %.3f" % (allowance, self.turning_depth))
         rough = np.maximum(drop(allowance), r_min) if allowance > 0 else final
 
         # plunges across each stretch the blade can go down, at most `spacing` apart
@@ -151,8 +148,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
                     open_[a:b + 1] = False
             for a, b in _runs(open_):
                 self.warnings.append(
-                    "Side-turn: Z %.3f to %.3f is plunged, not side-turned: the groove there is barely wider than "
-                    "the blade (%.3f)" % (z_ref[a] + w, z_ref[b], w))
+                    "Side-turn: Z %.3f to %.3f plunged instead, the groove is barely wider than the insert (%.3f)"
+                    % (z_ref[a] + w, z_ref[b], w))
         for a, b in _runs(open_):
             za, zb = z_ref[a], z_ref[b]
             n = int(math.ceil((za - zb) / spacing - 1e-9)) if za > zb else 0
@@ -206,8 +203,8 @@ class GrooveOP(liblathe.op.base.BaseOP):
             geo.follow(target, zs)
         if steps_added:
             self.warnings.append(
-                "Added %d side-turning passes, each at most the turning depth (%.3f) deep, where the plunges "
-                "left more than the insert can take sideways" % (steps_added, t_depth))
+                "%d side-turning passes added where the plunges left more than the turning depth (%.3f)"
+                % (steps_added, t_depth))
 
         # spring pass: the last finish pass (both halves, if two-sided) once more
         if self.spring_pass and self.finish_paths:
@@ -221,7 +218,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         step = float(self.step_down) if self.step_down and self.step_down > 0 else (
             0.9 * t_depth if t_depth > 0 else 0.5 * w)
         if t_depth > 0 and step > t_depth + 1e-9:
-            self.warnings.append("The step down (%.3f) is more than the tool's turning depth (%.3f)" % (step, t_depth))
+            self.warnings.append("Step down %.3f is more than the insert's turning depth %.3f" % (step, t_depth))
         floor = float(np.min(rough))
         corner = float(self.corner_radius or 0.0)
         dz = abs(z_ref[0] - z_ref[1]) if len(z_ref) > 1 else 0.0

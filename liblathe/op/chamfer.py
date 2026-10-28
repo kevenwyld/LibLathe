@@ -25,13 +25,11 @@ class ChamferOP(liblathe.op.base.BaseOP):
         for radius, z, kind, size in self.corners:
             match = [c for c in found if abs(-c["point"].X - radius) < 1e-3 and abs(c["point"].Z - z) < 1e-3]
             if not match:
-                self.warnings.append("No sharp corner of the part at radius %.3f, Z %.3f (only corners between two "
-                                     "straight edges can be chamfered or filleted)" % (radius, z))
+                self.warnings.append("No sharp corner between straight edges at radius %.3f, Z %.3f" % (radius, z))
                 continue
             c = match[0]
             if not c["outside"]:
-                self.warnings.append("The corner at radius %.3f, Z %.3f is an inside corner: a chamfer or fillet "
-                                     "there would add material" % (radius, z))
+                self.warnings.append("Radius %.3f, Z %.3f is an inside corner: left alone" % (radius, z))
                 continue
             picks[c["index"]] = (kind, size)
             wanted[c["index"]] = (c, size)
@@ -39,7 +37,7 @@ class ChamferOP(liblathe.op.base.BaseOP):
         for index in wanted:
             if index not in done:
                 c, size = wanted[index]
-                self.warnings.append("The edges at radius %.3f, Z %.3f are too short for a %.3f %s"
+                self.warnings.append("Edges at radius %.3f, Z %.3f too short for a %.3f %s: left alone"
                                      % (-c["point"].X, c["point"].Z, size, picks[index][0]))
         # each corner as Profile would finish it with a Z range and a minimum
         # diameter round it: the whole (changed) outline, its working window

@@ -24,7 +24,7 @@ class PartoffOP(liblathe.op.base.BaseOP):
         self.warnings = []
         w = float(self.groove_width)
         if w <= 0:
-            raise ValueError("Parting tool width must be greater than zero")
+            raise ValueError("The parting insert's width must be above zero")
         self.z_ref = self.z_end() - w
         r_outer = -self.x_outer()
         self.r_start = r_outer + self.radial_clearance()
@@ -34,9 +34,8 @@ class PartoffOP(liblathe.op.base.BaseOP):
         if self.cutting_depth > 0 and r_outer - self.cutting_depth > self.r_end + 1e-9:
             reach = r_outer - self.cutting_depth
             self.warnings.append(
-                "The insert's grooving depth (%.3f) cannot reach the centreline from the max diameter "
-                "(radius %.3f): the plunge stops at radius %.3f and does not part off"
-                % (self.cutting_depth, r_outer, reach))
+                "Grooving depth %.3f does not reach the centre from radius %.3f: the plunge stops at radius %.3f "
+                "without parting off" % (self.cutting_depth, r_outer, reach))
             self.r_end = reach
 
     def generate_gcode(self):
