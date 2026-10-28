@@ -17,7 +17,6 @@ class ChamferOP(liblathe.op.base.BaseOP):
         self.corners = []
 
     def generate_path(self):
-        self.warnings = getattr(self, "warnings", [])
         self.tool_paths = []
         self.corners_done = []
         found = corner_tools.find_corners(self.part_segment_group)
@@ -63,5 +62,5 @@ class ChamferOP(liblathe.op.base.BaseOP):
         path = []
         for segmentgroup in self.tool_paths:
             path.extend(segmentgroup.to_commands(self.part_segment_group, self.stock, self.step_over,
-                                                 self.finish_passes, self.hfeed, self.vfeed, retract=self.retract))
+                                                 self.finish_passes, self.hfeed, self.feed_in(), retract=self.retract))
         return path

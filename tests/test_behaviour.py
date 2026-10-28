@@ -59,7 +59,7 @@ class test_ToolOutline(unittest.TestCase):
             o.tool.set_tip_angle(tool[0])
             o.tool.set_rotation(tool[1])
         o.get_gcode()
-        return [w for w in getattr(o, "warnings", []) if "would hit the part" in w]
+        return [w for w in o.warnings if "would hit the part" in w]
 
     def test_no_false_alarms(self):
         """The test parts with their inserts: nothing but the nose touches the part."""
@@ -511,6 +511,44 @@ class test_Thread(unittest.TestCase):
         """Threading to the end of the stock is allowed: the fixture is not assumed."""
         cmds = self._thread().get_gcode()
         self.assertAlmostEqual(min(c.get_params()["Z"] for c in cmds if c.get_movement() == "G33"), 0.0, places=4)
+
+
+class test_Results(unittest.TestCase):
+    """Parameters are set in __init__, results start empty, and get_gcode() leaves the parameters alone."""
+
+    def test_results_initialised(self):
+        for name, cls in R.OPS.items():
+            with self.subTest(op=name):
+                op = cls()
+                self.assertEqual((op.warnings, op.lead_in_used, op.edges_broken), ([], None, []))
+
+    def test_parameters_per_instance(self):
+        for name, param in (("groove", "groove_width"), ("partoff", "overtravel"), ("thread", "pitch")):
+            with self.subTest(op=name):
+                cls = R.OPS[name]
+                self.assertNotIn(param, vars(cls))
+                a, b = cls(), cls()
+                a.set_params({param: 7})
+                self.assertNotEqual(getattr(b, param), 7)
+
+    def test_unset_vfeed_is_not_overwritten(self):
+        for name, part, params in (("rough", "bar12", {}), ("groove", "groove", dict(BLADE)),
+                                   ("partoff", "groove", dict(BLADE))):
+            with self.subTest(op=name):
+                op = R.make_op(name, part, dict(params, vfeed=0))
+                cmds = op.get_gcode()
+                self.assertEqual(op.vfeed, 0)
+                self.assertNotIn(0, [c.get_params().get("F") for c in cmds])
+
+    def test_warnings_do_not_accumulate(self):
+        op = R.make_op("profile", "shoulder", {})
+        op.tool.set_tip_angle(80)
+        op.tool.set_rotation(95)
+        op.get_gcode()
+        first = list(op.warnings)
+        op.get_gcode()
+        self.assertTrue(first)
+        self.assertEqual(op.warnings, first)
 
 
 class test_WaivedChecks(unittest.TestCase):

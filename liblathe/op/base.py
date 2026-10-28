@@ -23,8 +23,6 @@ class BaseOP:
         caller carries on."""
         if check not in (self.ignored_checks or ()):
             raise Refusal(check, message)
-        if not hasattr(self, "warnings") or self.warnings is None:
-            self.warnings = []
         self.warnings.append("Generated anyway (check %s waived): %s" % (check, message))
 
     def defeatured(self):
@@ -92,7 +90,9 @@ class BaseOP:
         self.break_edges = 0.0
         # Face: the plane to face down to (None: the part's front)
         self.face_z = None
-        # the corners broken, as Points (for the caller to report)
+        # results of get_gcode(): warnings, the lead-in used and the corners broken (Points)
+        self.warnings = []
+        self.lead_in_used = None
         self.edges_broken = []
 
         self.leadin_angle = 270
@@ -217,11 +217,9 @@ class BaseOP:
 
         if self.needs_tool and self.tool is None:
             raise Warning("No tool set for the operation")
+        self.warnings = []
+        self.lead_in_used = None
         self.apply_edge_break()
-        # an unset (zero) vertical feed would put F0 on the moves into the
-        # cut; use the horizontal feed for them instead
-        if not self.vfeed or self.vfeed <= 0:
-            self.vfeed = self.hfeed
 
         # a window with no length along Z has nothing to cut; don't produce
         # a degenerate path for it
@@ -248,13 +246,15 @@ class BaseOP:
                 or not getattr(self.tool, "edge_length", None):
             return
         from liblathe.base import collision
-        if not hasattr(self, "warnings"):
-            self.warnings = []
         for z_from, z_to, depth in collision.check(path, self.tool, self.target_outline()):
             span = "at Z %.3f" % z_from if abs(z_from - z_to) < 1e-6 else "between Z %.3f and Z %.3f" % (z_from, z_to)
             self.warnings.append(
                 "The insert's edge or body (not its nose) would hit the part %s, up to %.2f deep. Use a smaller "
                 "tip angle or another rotation, or keep the operation away from there" % (span, depth))
+
+    def feed_in(self):
+        """The feed into the cut: vfeed, or hfeed when vfeed is unset (an F0 would stall the move)."""
+        return self.vfeed if self.vfeed and self.vfeed > 0 else self.hfeed
 
     def radial_clearance(self):
         """The radial clearance: clearance_x if set, else the clearance."""

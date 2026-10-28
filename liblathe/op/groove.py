@@ -17,33 +17,35 @@ class GrooveOP(liblathe.op.base.BaseOP):
     # the tool is described by the parameters below, not a liblathe Tool
     needs_tool = False
 
-    # grid spacing along Z for the drop cutter
-    resolution = 0.005
+    def __init__(self):
+        super().__init__()
+        # grid spacing along Z for the drop cutter
+        self.resolution = 0.005
 
-    # tool geometry (cutting_depth is the insert's grooving depth, La max)
-    groove_width = 0
-    corner_radius = 0
-    cutting_depth = 0
-    turning_depth = 0
-    # material the plunges leave for the finish passes
-    finish_allowance = 0.2
-    # spacing of the finish passes; 0 splits the allowance equally
-    finish_step_over = 0.0
-    # finish each pass as two halves meeting at the deepest point (down each
-    # wall toward the middle) instead of one pass in, across and out
-    finish_two_sided = False
-    # roughing: "plunge" (side by side, full depth) or "side_turn" (levels:
-    # a plunge of one step down, then a traverse along Z at that depth,
-    # alternating direction, less tool pressure in wide grooves)
-    strategy = "plunge"
-    # side_turn: depth of each level; 0: 90% of the turning depth (half the
-    # blade width without one)
-    step_down = 0.0
-    # pecking on plunges: peck_depth > 0 feeds in that far at a time, backing
-    # off peck_retract between pecks (or out of the cut, with peck_full_retract)
-    peck_depth = 0.0
-    peck_retract = 0.2
-    peck_full_retract = False
+        # tool geometry (cutting_depth is the insert's grooving depth, La max)
+        self.groove_width = 0
+        self.corner_radius = 0
+        self.cutting_depth = 0
+        self.turning_depth = 0
+        # material the plunges leave for the finish passes
+        self.finish_allowance = 0.2
+        # spacing of the finish passes; 0 splits the allowance equally
+        self.finish_step_over = 0.0
+        # finish each pass as two halves meeting at the deepest point (down each
+        # wall toward the middle) instead of one pass in, across and out
+        self.finish_two_sided = False
+        # roughing: "plunge" (side by side, full depth) or "side_turn" (levels:
+        # a plunge of one step down, then a traverse along Z at that depth,
+        # alternating direction, less tool pressure in wide grooves)
+        self.strategy = "plunge"
+        # side_turn: depth of each level; 0: 90% of the turning depth (half the
+        # blade width without one)
+        self.step_down = 0.0
+        # pecking on plunges: peck_depth > 0 feeds in that far at a time, backing
+        # off peck_retract between pecks (or out of the cut, with peck_full_retract)
+        self.peck_depth = 0.0
+        self.peck_retract = 0.2
+        self.peck_full_retract = False
 
     def generate_path(self):
         self.warnings = []
@@ -253,18 +255,19 @@ class GrooveOP(liblathe.op.base.BaseOP):
         """A plunge at z0 from the retract radius to floor: in one feed move,
         or pecking from the material's top (r_top) by peck_depth."""
         cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
+        vfeed = self.feed_in()
         peck = float(self.peck_depth or 0.0)
         if peck > 0:
             x = min(r_top, r_retract)
             while x - peck > floor + 1e-6:
                 x -= peck
-                cmds.append(Command('G1', {'X': x, 'Z': z0, 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z0, 'F': vfeed}))
                 back = r_retract if self.peck_full_retract else min(x + float(self.peck_retract), r_retract)
                 cmds.append(Command('G0', {'X': back, 'Z': z0}))
                 if self.peck_full_retract:
                     # back in at rapid to just short of where it reached
                     cmds.append(Command('G0', {'X': min(x + float(self.peck_retract), r_retract), 'Z': z0}))
-        cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': self.vfeed}))
+        cmds.append(Command('G1', {'X': floor, 'Z': z0, 'F': vfeed}))
         cmds.append(Command('G0', {'X': r_retract, 'Z': z0}))
 
     def _add_finish(self, prof, z_ref):
@@ -290,6 +293,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
     def generate_gcode(self):
         """Plunges then finish passes, as commands with a positive radius X."""
         cmds = [Command('G18', {})]
+        vfeed = self.feed_in()
         r_retract = -self.x_outer() + self.radial_clearance()
         r_top = -self.x_outer()
         for z0, floor in self.plunges:
@@ -308,42 +312,42 @@ class GrooveOP(liblathe.op.base.BaseOP):
             span = (min(p[1] for p in pts), max(p[1] for p in pts))
             deeper = last is not None and x <= last[0] + 1e-9
             if deeper and abs(last[1] - z) < 1e-6:
-                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': vfeed}))
             elif deeper and last_span[0] - 1e-6 <= z <= last_span[1] + 1e-6:
                 # starts within what the last level cut: along it (air) to
                 # here, then down
                 cmds.append(Command('G1', {'X': last[0], 'Z': z, 'F': self.hfeed}))
-                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': vfeed}))
             elif deeper and span[0] - 1e-6 <= last[1] <= span[1] + 1e-6:
                 # a wider level: down where the last ended, out along this
                 # level (its own material) to where it starts
-                cmds.append(Command('G1', {'X': x, 'Z': last[1], 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': last[1], 'F': vfeed}))
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
             else:
                 if last is not None:
                     if last[0] < r_clear:
-                        cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': self.vfeed}))
+                        cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': vfeed}))
                     cmds.append(Command('G0', {'X': r_retract, 'Z': last[1]}))
                 cmds.append(Command('G0', {'X': r_retract, 'Z': z}))
-                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': x, 'Z': z, 'F': vfeed}))
             for x, z in pts[1:]:
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
             last, last_span = pts[-1], span
         if last is not None:
             if last[0] < r_clear:
-                cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': r_clear, 'Z': last[1], 'F': vfeed}))
             cmds.append(Command('G0', {'X': r_retract, 'Z': last[1]}))
         for pts in self.finish_paths:
             if not pts:
                 continue
             x, z = pts[0]
             cmds.append(Command('G0', {'X': r_retract, 'Z': z}))
-            cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.vfeed}))
+            cmds.append(Command('G1', {'X': x, 'Z': z, 'F': vfeed}))
             for x, z in pts[1:]:
                 cmds.append(Command('G1', {'X': x, 'Z': z, 'F': self.hfeed}))
             x, z = pts[-1]
             if x < r_clear:
-                cmds.append(Command('G1', {'X': r_clear, 'Z': z, 'F': self.vfeed}))
+                cmds.append(Command('G1', {'X': r_clear, 'Z': z, 'F': vfeed}))
             cmds.append(Command('G0', {'X': r_retract, 'Z': z}))
         return cmds
 

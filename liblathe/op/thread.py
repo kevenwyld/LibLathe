@@ -30,26 +30,28 @@ class ThreadOP(liblathe.op.base.BaseOP):
 
     needs_tool = False
 
-    pitch = 1.0
-    thread_depth = 0.0
-    thread_radius = 0.0
-    internal = False
-    passes = 0               # infeed passes to full depth; 0: recommended for the pitch
-    first_depth = 0.0        # 0: from the number of passes
-    min_depth = 0.05
-    degression = 1.5
-    infeed_angle = 29.5
-    spring_passes = 1
-    lead_in = 0.0            # 0: three pitches
-    thread_length = 0.0      # 0: the whole window, from its start
-    # run-out: the last run_out of the thread (along Z) tapers out to the
-    # crest instead of stopping dead at full depth (G76's E, with L2); 0:
-    # stop dead (into a relief groove)
-    run_out = 0.0
-    canned = False
-    # the insert's profile, to keep it clear of the part at both ends
-    tool_angle = 60.0
-    tool_width = 0.0
+    def __init__(self):
+        super().__init__()
+        self.pitch = 1.0
+        self.thread_depth = 0.0
+        self.thread_radius = 0.0
+        self.internal = False
+        self.passes = 0               # infeed passes to full depth; 0: recommended for the pitch
+        self.first_depth = 0.0        # 0: from the number of passes
+        self.min_depth = 0.05
+        self.degression = 1.5
+        self.infeed_angle = 29.5
+        self.spring_passes = 1
+        self.lead_in = 0.0            # 0: three pitches
+        self.thread_length = 0.0      # 0: the whole window, from its start
+        # run-out: the last run_out of the thread (along Z) tapers out to the
+        # crest instead of stopping dead at full depth (G76's E, with L2); 0:
+        # stop dead (into a relief groove)
+        self.run_out = 0.0
+        self.canned = False
+        # the insert's profile, to keep it clear of the part at both ends
+        self.tool_angle = 60.0
+        self.tool_width = 0.0
 
     def generate_path(self):
         self.warnings = []

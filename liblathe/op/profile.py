@@ -47,7 +47,7 @@ class ProfileOP(liblathe.op.base.BaseOP):
         path = []
 
         for segmentgroup in reversed(self.tool_paths):
-            finish = segmentgroup.to_commands(self.part_segment_group, self.stock, self.step_over, self.finish_passes, self.hfeed, self.vfeed,
+            finish = segmentgroup.to_commands(self.part_segment_group, self.stock, self.step_over, self.finish_passes, self.hfeed, self.feed_in(),
                                          retract=self.retract)
             path.extend(finish)
 
