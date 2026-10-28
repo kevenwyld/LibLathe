@@ -1,3 +1,5 @@
+import inspect
+import math
 import os
 import sys
 import unittest
@@ -188,6 +190,37 @@ class test_segment_group(unittest.TestCase):
         copy.add_segment(Segment(Point(0, 0, 0), Point(0, 0, -1)))
         self.assertIs(group.segments, segments)
         self.assertEqual(self._snapshot(group), before)
+
+
+    def test_merge_segments_long_polyline(self):
+        """5000 collinear segments (the recursive version passed the recursion limit)."""
+        pts = [Point(-10, 0, -0.01 * i) for i in range(5001)]
+        group = SegmentGroup()
+        for a, b in zip(pts[:-1], pts[1:]):
+            group.add_segment(Segment(a, b))
+        group.merge_segments()
+        self.assertEqual(group.count(), 1)
+        self.assertIs(group.segments[0].start, pts[0])
+        self.assertIs(group.segments[0].end, pts[-1])
+
+    def test_clean_offset_path_long_polyline(self):
+        """5000 points, cleaned from near the end (the whole path is O(n^2)); then 1000 under a low recursion limit."""
+        pts = [Point(-10 - math.sin(0.002 * i), 0, -0.01 * i) for i in range(5001)]
+        group = SegmentGroup()
+        for a, b in zip(pts[:-1], pts[1:]):
+            group.add_segment(Segment(a, b))
+        before = [(seg.start, seg.end) for seg in group.segments]
+        group.clean_offset_path(4900)
+        self.assertEqual([(seg.start, seg.end) for seg in group.segments], before)
+        short = SegmentGroup()
+        short.segments = group.segments[:1000]
+        limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(len(inspect.stack()) + 300)
+        try:
+            short.clean_offset_path()
+        finally:
+            sys.setrecursionlimit(limit)
+        self.assertEqual(short.count(), 1000)
 
 
 if __name__ == '__main__':

@@ -381,53 +381,49 @@ class SegmentGroup:
 
     def merge_segments(self):
         """merge adjacent line segments"""
-        for i in range(len(self.segments)):
-            if i + 1 < len(self.segments):
-                if self.segments[i].get_rotation() == self.segments[i + 1].get_rotation():
-                    if self.segments[i].bulge == 0 and self.segments[i + 1].bulge == 0:
-                        # build a new segment rather than editing segments[i] in
-                        # place: the segment objects are shared with the part
-                        # outline, and mutating them corrupts the part geometry
-                        self.segments[i] = Segment(self.segments[i].start, self.segments[i + 1].end)
-                        self.segments.pop(i + 1)
-                        # call merge segments again
-                        self.merge_segments()
+        segments = self.segments
+        i = 0
+        while i + 1 < len(segments):
+            a, b = segments[i], segments[i + 1]
+            if a.get_rotation() == b.get_rotation() and a.bulge == 0 and b.bulge == 0:
+                # a new segment, not a and b edited: they are shared with the part outline
+                segments[i] = Segment(a.start, b.end)
+                segments.pop(i + 1)
+                # the merged segment may now line up with the one before it
+                i = max(i - 1, 0)
+            else:
+                i += 1
 
     def clean_offset_path(self, index=0):
         """
         remove any self intersecting features from the path.
-        index is the segment to evaluate
+        index is the first segment to evaluate
         """
-        segments = self.get_segments()
-        if index + 1 < len(segments):
+        segments = self.segments
+        while index + 1 < len(segments):
             for i in range(len(segments) - 1, index, -1):
-                if i != index:
-                    if segments[index].end.is_same(segments[i].start):
-                        continue
+                if segments[index].end.is_same(segments[i].start):
+                    continue
 
-                    intersect, pt = segments[index].intersect(segments[i])
-                    if intersect:
-                        if type(pt) is list:
-                            pt = pt[0]
+                intersect, pt = segments[index].intersect(segments[i])
+                if intersect:
+                    if type(pt) is list:
+                        pt = pt[0]
 
-                        angle = self.segments[index].angle_from_points(self.segments[index].start, pt)
-                        self.segments[index].end = pt
-                        if self.segments[index].bulge:
-                            self.segments[index].set_bulge(angle)
+                    angle = segments[index].angle_from_points(segments[index].start, pt)
+                    segments[index].end = pt
+                    if segments[index].bulge:
+                        segments[index].set_bulge(angle)
 
-                        angle = self.segments[i].angle_from_points(pt, self.segments[i].end)
-                        self.segments[i].start = pt
-                        if self.segments[i].bulge != 0:
-                            self.segments[i].set_bulge(angle)
-                            #self.segments[i].derive_bulge(self.segments[i])
-                        if i != index + 1:
-                            del self.segments[index + 1:i]
+                    angle = segments[i].angle_from_points(pt, segments[i].end)
+                    segments[i].start = pt
+                    if segments[i].bulge != 0:
+                        segments[i].set_bulge(angle)
+                    if i != index + 1:
+                        del segments[index + 1:i]
 
-                        break
-
-            if index < self.count():
-                # run again with the next segment
-                self.clean_offset_path(index + 1)
+                    break
+            index += 1
 
     def defeature(self, stock_z_min, tool, allow_grooving=False, check=True):
         """Defeature the segment group. Remove features that cannot be turned. e.g. undercuts / grooves"""
