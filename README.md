@@ -11,6 +11,11 @@ the [CAM Lathe Turning](https://github.com/kevenwyld/CAMLatheTurning) addon. It 
 boring, threading to standard tolerance classes, grooving strategies, insert
 outline collision checks and a regression test suite.
 
+## Requirements
+Python 3.8 or later and numpy; pillow for `liblathe.base.plot`. Run the tests
+from the repository root with `python3 -m pytest` (see CONTRIBUTING.md for the
+golden G-code files).
+
 ## Credits
 * **Daniel Wood** ([dubstar-04](https://github.com/dubstar-04)): original
   author.
@@ -21,7 +26,7 @@ outline collision checks and a regression test suite.
 ## Licence
 GPL-2, as the original (see LICENSE).
 
-## Examples 
+## Examples
 ### Facing:
 ![Facing Example](docs/source/LL_static/images/FacingOp.jpeg)
 
