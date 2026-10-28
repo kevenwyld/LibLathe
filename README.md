@@ -24,7 +24,7 @@ golden G-code files).
   this fork.
 
 ## Licence
-GPL-2, as the original (see LICENSE).
+GPL-2.0-or-later, as the original (see LICENSE).
 
 ## Examples
 ### Facing:
