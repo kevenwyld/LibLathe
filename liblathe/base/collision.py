@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from liblathe.base.segmentgroup import _sample_points
+from liblathe.base.geometry import sample_points
 
 GRID = 0.02          # raster cell (mm)
 TOLERANCE = 0.01     # the part is shrunk by this: touching is not a hit
@@ -46,7 +46,7 @@ def rasterize(segmentgroup, z_lo, z_hi, r_hi):
     """Material inside an outline as a bool grid: cell [i, j] is z = z_lo + i * GRID, radius j * GRID."""
     pts = []
     for seg in segmentgroup.get_segments():
-        s = _sample_points(seg, GRID / 2)
+        s = sample_points(seg, GRID / 2)
         pts.extend(s if not pts else s[1:])
     if len(pts) < 2:
         return None

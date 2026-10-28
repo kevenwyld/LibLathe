@@ -2,6 +2,7 @@ import math
 
 import liblathe.op.base
 from liblathe.base.command import Command
+from liblathe.base.geometry import sample_points
 
 # Recommended number of infeed passes by pitch (mm) for external 60 degree
 # threads (typical insert makers' tables); interpolated in between.
@@ -126,7 +127,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
         half, slope = self._insert_profile()
         room = where = None
         for seg in self.part_segment_group.get_segments():
-            for x, z in _sample(seg, 0.05):
+            for x, z in sample_points(seg, 0.05):
                 h = -x - tip
                 if h <= 1e-3 or z <= self.z_front + 1e-6:
                     continue
@@ -172,7 +173,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
         front, back = self.z_front, self.z_back
         latest_end = None        # the highest Z the thread must end at to clear what is behind it
         for seg in self.part_segment_group.get_segments():
-            for x, z in _sample(seg, 0.05):
+            for x, z in sample_points(seg, 0.05):
                 r = -x
                 if r <= tip + 1e-3 or z > front + 1e-6:
                     continue
@@ -253,8 +254,3 @@ class ThreadOP(liblathe.op.base.BaseOP):
         cmds.append(Command('G0', {'X': self.r_clear, 'Z': self.z_drive}))
         return cmds
 
-
-def _sample(seg, step):
-    """Points (x, z) along a segment, ends included."""
-    from liblathe.base.segmentgroup import _sample_points
-    return _sample_points(seg, step)

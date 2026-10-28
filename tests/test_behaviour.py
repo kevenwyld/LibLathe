@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 import regression_helpers as R
-import liblathe.op.groove as G
+from liblathe.base.geometry import sample_points
 
 BLADE = {"groove_width": 3, "corner_radius": 0.3, "cutting_depth": 30}
 M12 = {"pitch": 1.75, "thread_depth": 1.0735, "thread_radius": 6.0, "tool_width": 6}
@@ -411,7 +411,7 @@ class test_Groove(unittest.TestCase):
             return h
         pts = []
         for s in R.part_segments(R.load_part("groove")):
-            pts += G._sample_segment(s, 0.01)
+            pts += sample_points(s, 0.01)
         pr = np.array([-x for x, z in pts]); pz = np.array([z for x, z in pts])
         worst, pos = math.inf, None
         for mv, x, z in R.moves(cmds):

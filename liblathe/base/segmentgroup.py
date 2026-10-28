@@ -2,6 +2,7 @@ import math
 
 from liblathe.base.boundbox import BoundBox
 from liblathe.base.command import Command
+from liblathe.base.geometry import dilate_rect_profile, sample_points, simplify_polyline
 from liblathe.base.point import Point
 from liblathe.base.segment import Segment
 
@@ -262,7 +263,7 @@ class SegmentGroup:
             return SegmentGroup()
         pts = []
         for seg in segs:
-            pts.extend(_sample_points(seg, resolution / 2.5))
+            pts.extend(sample_points(seg, resolution / 2.5))
         zs = [z for x, z in pts]
         z_top_contour, z_end = max(zs), segs[-1].end.Z
         start = min(zs) - sz - 2 * resolution
@@ -272,17 +273,7 @@ class SegmentGroup:
             i = int(round((z - start) / resolution))
             if 0 <= i < n and -x > prof[i]:
                 prof[i] = -x
-        # shrinking (negative stock): the smallest neighbour along Z, radii stopped at the axis
-        k_max = int(math.ceil(abs(sz) / resolution))
-        pick = np.maximum if sz >= 0 else np.minimum
-        grown = prof.copy()
-        for k in range(1, k_max + 1):
-            grown[k:] = pick(grown[k:], prof[:-k])
-            grown[:-k] = pick(grown[:-k], prof[k:])
-        grown = grown + sx
-        if sx < 0 or sz < 0:
-            finite = np.isfinite(grown)
-            grown[finite] = np.maximum(grown[finite], 0.0)
+        grown = dilate_rect_profile(prof, sx, sz, resolution)
         guard = grown.copy()
         guard[1:] = np.maximum(guard[1:], grown[:-1])
         guard[:-1] = np.maximum(guard[:-1], grown[1:])
@@ -294,7 +285,7 @@ class SegmentGroup:
         for i in range(i_top, i_end - 1, -1):
             if np.isfinite(guard[i]):
                 line.append((-float(guard[i]), start + i * resolution))
-        line = _simplify_polyline(line, tolerance)
+        line = simplify_polyline(line, tolerance)
         out = SegmentGroup()
         for (x1, z1), (x2, z2) in zip(line[:-1], line[1:]):
             out.add_segment(Segment(Point(x1, 0, z1), Point(x2, 0, z2)))
@@ -766,49 +757,3 @@ def _clip_segment(seg, x_min, x_max, z_min, z_max, tol):
 
     return pieces
 
-
-def _sample_points(seg, step):
-    """Points (x, z) along a segment (line or arc) at most step apart, ends included."""
-    sx, sz, ex, ez = seg.start.X, seg.start.Z, seg.end.X, seg.end.Z
-    if seg.bulge == 0:
-        length = math.hypot(ex - sx, ez - sz)
-        n = max(1, int(math.ceil(length / step)))
-        return [(sx + (ex - sx) * i / n, sz + (ez - sz) * i / n) for i in range(n + 1)]
-    c = seg.get_centre_point()
-    rad = seg.get_radius()
-    a0 = math.atan2(sx - c.X, sz - c.Z)
-    included = seg.get_angle()
-    sweep = included
-    px, pz = c.X + rad * math.sin(a0 - included), c.Z + rad * math.cos(a0 - included)
-    qx, qz = c.X + rad * math.sin(a0 + included), c.Z + rad * math.cos(a0 + included)
-    if math.hypot(px - ex, pz - ez) < math.hypot(qx - ex, qz - ez):
-        sweep = -included
-    n = max(1, int(math.ceil(abs(sweep) * rad / step)))
-    return [(c.X + rad * math.sin(a0 + sweep * i / n), c.Z + rad * math.cos(a0 + sweep * i / n))
-            for i in range(n + 1)]
-
-
-def _simplify_polyline(points, tolerance):
-    """Douglas-Peucker on (x, z) points; keeps the end points."""
-    if len(points) < 3:
-        return points
-    keep = [False] * len(points)
-    keep[0] = keep[-1] = True
-    stack = [(0, len(points) - 1)]
-    while stack:
-        a, b = stack.pop()
-        ax, az = points[a]
-        bx, bz = points[b]
-        dx, dz = bx - ax, bz - az
-        length = math.hypot(dx, dz)
-        worst, index = 0.0, None
-        for i in range(a + 1, b):
-            px, pz = points[i]
-            d = math.hypot(px - ax, pz - az) if length == 0 else abs(dx * (az - pz) - dz * (ax - px)) / length
-            if d > worst:
-                worst, index = d, i
-        if index is not None and worst > tolerance:
-            keep[index] = True
-            stack.append((a, index))
-            stack.append((index, b))
-    return [p for p, k in zip(points, keep) if k]

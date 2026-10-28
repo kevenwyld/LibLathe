@@ -1,4 +1,5 @@
 from liblathe.base.command import Command
+from liblathe.base.geometry import sample_points
 from liblathe.base.point import Point
 from liblathe.base.segment import Segment
 from liblathe.base.segmentgroup import SegmentGroup
@@ -420,10 +421,9 @@ def _without_air_tail(segmentgroup, x_air, tol=0.05):
     The path without trailing segments wholly outside the stock radius by more than tol (a bar's size
     tolerance). The segment that leaves the stock is kept, so the pass ends clear of it.
     """
-    from liblathe.base.segmentgroup import _sample_points
     segs = segmentgroup.get_segments()
     n = len(segs)
-    while n > 1 and all(x < x_air - tol for x, _ in _sample_points(segs[n - 1], 0.05)):
+    while n > 1 and all(x < x_air - tol for x, _ in sample_points(segs[n - 1], 0.05)):
         n -= 1
     if n == len(segs):
         return segmentgroup

@@ -4,6 +4,7 @@ import numpy as np
 
 import liblathe.op.base
 from liblathe.base.command import Command
+from liblathe.base.geometry import dilate_rect_profile, sample_points, simplify_polyline
 
 
 class GrooveOP(liblathe.op.base.BaseOP):
@@ -100,7 +101,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
             # profile grown by the stock to leave plus the allowance: a
             # rectangle, sx radially and sz along Z, so X stock lands on
             # diameters and Z stock on walls and faces
-            prof = _dilate_rect(profile, sx + allowance, sz + allowance, dz)
+            prof = _Profile(profile.start, dz, dilate_rect_profile(profile.values, sx + allowance, sz + allowance, dz))
             x0 = np.full(len(z_ref), -np.inf)
             # the two flank lines (u = 0 and u = W) are the blade's boundary:
             # part there is touching the flank (e.g. a wall the blade goes
@@ -196,7 +197,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
                 if not need.any():
                     break
                 for a, b in _runs(need):
-                    self.finish_paths.append(_simplify(list(zip(level[a:b + 1].tolist(), zs[a:b + 1].tolist())), 0.0005))
+                    self.finish_paths.append(simplify_polyline(list(zip(level[a:b + 1].tolist(), zs[a:b + 1].tolist())), 0.0005))
                     steps_added += 1
                 geo.follow(level, zs)
             self._add_finish(target, zs)
@@ -244,7 +245,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
                     continue
                 xs, zs = path[a:b + 1], z_ref[a:b + 1]
                 pts = list(zip(xs.tolist(), zs.tolist()))
-                self.rough_paths.append(_simplify(pts if forward else pts[::-1], 0.0005))
+                self.rough_paths.append(simplify_polyline(pts if forward else pts[::-1], 0.0005))
                 geo.follow(xs, zs)
             forward = not forward
 
@@ -270,7 +271,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         """A finish pass: in, across and out; or with finish_two_sided two halves meeting at the deepest point."""
         parts = _halves(prof, z_ref) if self.finish_two_sided else [(prof, z_ref)]
         for xs, zs in parts:
-            self.finish_paths.append(_simplify(list(zip(xs.tolist(), zs.tolist())), 0.0005))
+            self.finish_paths.append(simplify_polyline(list(zip(xs.tolist(), zs.tolist())), 0.0005))
 
     def _profile_radius(self, z_lo, z_hi, dz):
         """Largest part radius at each Z on a grid (None where there is no part)."""
@@ -280,7 +281,7 @@ class GrooveOP(liblathe.op.base.BaseOP):
         values = np.full(n, -np.inf)
         step = dz / 2.5
         for seg in self.part_segment_group.get_segments():
-            for x, z in _sample_segment(seg, step):
+            for x, z in sample_points(seg, step):
                 i = int(round((z - start) / dz))
                 if 0 <= i < n:
                     values[i] = max(values[i], -x)
@@ -449,21 +450,6 @@ class _Blade:
             self.cut_position(x0, z0)
 
 
-def _dilate_rect(profile, sx, sz, dz):
-    """Grow the profile by sz along Z then sx radially; negative values shrink it, never past the axis."""
-    vals = profile.values
-    out = vals.copy()
-    pick = np.maximum if sz >= 0 else np.minimum
-    for k in range(1, int(math.ceil(abs(sz) / dz - 1e-9)) + 1):
-        out[k:] = pick(out[k:], vals[:-k])
-        out[:-k] = pick(out[:-k], vals[k:])
-    out = out + sx
-    if sx < 0 or sz < 0:
-        finite = np.isfinite(out)
-        out[finite] = np.maximum(out[finite], 0.0)
-    return _Profile(profile.start, dz, out)
-
-
 def _edge_height(u, w, r):
     """Height of the cutting edge above its lowest point at distance u from the chuck-side flank."""
     h = np.zeros_like(u)
@@ -474,53 +460,3 @@ def _edge_height(u, w, r):
     h[left] = r - np.sqrt(np.maximum(r * r - (r - u[left]) ** 2, 0.0))
     h[right] = r - np.sqrt(np.maximum(r * r - (u[right] - (w - r)) ** 2, 0.0))
     return h
-
-
-def _sample_segment(seg, step):
-    """Points (x, z) along a segment (line or arc) at most step apart, ends included."""
-    sx, sz, ex, ez = seg.start.X, seg.start.Z, seg.end.X, seg.end.Z
-    if seg.bulge == 0:
-        length = math.hypot(ex - sx, ez - sz)
-        n = max(1, int(math.ceil(length / step)))
-        return [(sx + (ex - sx) * i / n, sz + (ez - sz) * i / n) for i in range(n + 1)]
-    c = seg.get_centre_point()
-    rad = seg.get_radius()
-    a0 = math.atan2(sx - c.X, sz - c.Z)
-    included = seg.get_angle()
-    sweep = included
-    px, pz = c.X + rad * math.sin(a0 - included), c.Z + rad * math.cos(a0 - included)
-    qx, qz = c.X + rad * math.sin(a0 + included), c.Z + rad * math.cos(a0 + included)
-    if math.hypot(px - ex, pz - ez) < math.hypot(qx - ex, qz - ez):
-        sweep = -included
-    n = max(1, int(math.ceil(abs(sweep) * rad / step)))
-    return [(c.X + rad * math.sin(a0 + sweep * i / n), c.Z + rad * math.cos(a0 + sweep * i / n))
-            for i in range(n + 1)]
-
-
-def _simplify(points, tolerance):
-    """Douglas-Peucker on a polyline of (x, z) points; keeps the end points."""
-    if len(points) < 3:
-        return points
-    keep = [False] * len(points)
-    keep[0] = keep[-1] = True
-    stack = [(0, len(points) - 1)]
-    while stack:
-        a, b = stack.pop()
-        ax, az = points[a]
-        bx, bz = points[b]
-        dx, dz = bx - ax, bz - az
-        length = math.hypot(dx, dz)
-        worst, index = 0.0, None
-        for i in range(a + 1, b):
-            px, pz = points[i]
-            if length == 0:
-                d = math.hypot(px - ax, pz - az)
-            else:
-                d = abs(dx * (az - pz) - dz * (ax - px)) / length
-            if d > worst:
-                worst, index = d, i
-        if index is not None and worst > tolerance:
-            keep[index] = True
-            stack.append((a, index))
-            stack.append((index, b))
-    return [p for p, k in zip(points, keep) if k]
