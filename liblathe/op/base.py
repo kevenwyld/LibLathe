@@ -187,7 +187,7 @@ class BaseOP:
             if hasattr(self, param):
                 setattr(self, param, params[param])
             else:
-                raise Warning("Unknown operation parameter '%s'" % param)
+                raise ValueError("Unknown operation parameter %r" % (param,))
 
     def get_params(self):
         """Return operations parameters"""

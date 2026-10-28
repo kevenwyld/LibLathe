@@ -37,6 +37,11 @@ class test_BaseOP(unittest.TestCase):
         with self.assertWarns(Warning):
             self.test_op.set_params(params)
 
+    def test_set_params_unknown_raises_value_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            BaseOP().set_params({'wrong_para': "error"})
+        self.assertIn("'wrong_para'", str(ctx.exception))
+
     @unittest.expectedFailure
     def test_get_gcode(self):
         # Test get_gcode() with no tool set

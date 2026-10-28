@@ -1,4 +1,9 @@
+import numbers
 from enum import Enum
+
+
+def _is_number(value):
+    return isinstance(value, numbers.Real) and not isinstance(value, bool)
 
 
 class ToolOri(Enum):
@@ -46,51 +51,41 @@ class Tool:
         self.direction = tool_string[-1]
 
     def set_tip_angle(self, angle):
-        """Set the tools tip angle"""
-
-        if (isinstance(angle, int) or isinstance(angle, float)) and angle > 0 and angle < 90:
-            self.tip_angle = angle
-        else:
-            raise Warning("Tip angle must be between 0 and 90 degrees")
+        """Set the tool's tip angle, in degrees: more than 0, at most 180."""
+        if not (_is_number(angle) and 0 < angle <= 180):
+            raise ValueError("Tip angle must be more than 0 and at most 180 degrees, got %r" % (angle,))
+        self.tip_angle = angle
 
     def set_edge_length(self, edge_length):
-        """Set the tools edge edge_length"""
-
-        if (isinstance(edge_length, int) or isinstance(edge_length, float)) and edge_length > 0:
-            self.edge_length = edge_length
-        else:
-            raise Warning("Edge length must be above zero")
+        """Set the tool's edge length: above zero."""
+        if not (_is_number(edge_length) and edge_length > 0):
+            raise ValueError("Edge length must be above zero, got %r" % (edge_length,))
+        self.edge_length = edge_length
 
     def set_nose_radius(self, radius):
-        """Set the tools nose radius"""
-
-        if (isinstance(radius, int) or isinstance(radius, float)) and radius > 0:
-            self.nose_radius = radius
-        else:
-            raise Warning("Nose radius must be above zero")
+        """Set the tool's nose radius: zero (a sharp tip) or more."""
+        if not (_is_number(radius) and radius >= 0):
+            raise ValueError("Nose radius must be zero or more, got %r" % (radius,))
+        self.nose_radius = radius
 
     def set_direction(self, direction):
-        """ Set the tools cutting direction R-N-L"""
-        direction = direction.upper()
-        if direction in ["R", "N", "L"]:
-            self.direction = direction
-        else:
-            raise Warning("Direction must be R, L or N")
+        """Set the tool's cutting direction: R, N or L."""
+        value = direction.upper() if isinstance(direction, str) else direction
+        if value not in ("R", "N", "L"):
+            raise ValueError("Direction must be R, L or N, got %r" % (direction,))
+        self.direction = value
 
     def set_rotation(self, rotation):
-        """ Set the tools cutting rotation"""
-
-        if (isinstance(rotation, int) or isinstance(rotation, float)) and rotation > 0 and rotation < 360:
-            self.tool_rotation = rotation
-        else:
-            raise Warning("Rotation must be between 0 and 360 degrees")
+        """Set the tool's rotation about its tip, in degrees: 0 or more, less than 360."""
+        if not (_is_number(rotation) and 0 <= rotation < 360):
+            raise ValueError("Rotation must be at least 0 and less than 360 degrees, got %r" % (rotation,))
+        self.tool_rotation = rotation
 
     def set_orientation(self, orientation):
-        """ Set the tools cutting rotation"""
-        if orientation in [ToolOri.X, ToolOri.Z]:
-            self.orientation = orientation
-        else:
-            raise Warning("Orientation must be ToolOri.X or ToolOri.Z")
+        """Set the tool's orientation: ToolOri.X or ToolOri.Z."""
+        if orientation not in (ToolOri.X, ToolOri.Z):
+            raise ValueError("Orientation must be ToolOri.X or ToolOri.Z, got %r" % (orientation,))
+        self.orientation = orientation
 
     def get_tool_cutting_angle(self):
         """
@@ -111,7 +106,7 @@ class Tool:
         if self.edge_length:
             return self.edge_length / 4
         else:
-            raise Warning("Edge length is not set")
+            raise ValueError("Edge length is not set")
 
     def get_width(self):
         """
@@ -173,9 +168,9 @@ class Tool:
                 # print("shape Size: ", edgeedge_length)
                 return edge_length
             except(KeyError):
-                raise Warning("Unknown edge length code for this shape")
+                raise ValueError("Unknown edge length code %r for shape %r" % (edge_length, shape))
         else:
-            raise Warning("Unknown insert shape letter")
+            raise ValueError("Unknown insert shape letter %r" % (shape,))
 
     def get_nose_radius(self, radius):
         """
@@ -202,7 +197,7 @@ class Tool:
             # print("nose radius: ", radius)
             return radius
         except(KeyError):
-            raise Warning("Unknown nose radius code")
+            raise ValueError("Unknown nose radius code %r" % (radius,))
 
     def get_cutting_direction(self):
         """
