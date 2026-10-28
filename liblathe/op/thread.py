@@ -97,9 +97,8 @@ class ThreadOP(liblathe.op.base.BaseOP):
         self.depths = depths
 
         shift = math.tan(math.radians(self.infeed_angle))
-        self.passes = []
-        for d in depths:
-            self.passes.append((self.thread_radius + sign * d, self.z_drive - d * shift))
+        # result: each pass's (x, z) start; `passes` stays the requested count
+        self.pass_positions = [(self.thread_radius + sign * d, self.z_drive - d * shift) for d in depths]
 
         # where the tool waits between passes: clear of the surface it cuts
         if self.internal:
@@ -235,7 +234,7 @@ class ThreadOP(liblathe.op.base.BaseOP):
             # the run-out at the deepest pass's slope, out to the crest
             z_end = z_full - self.run_out * d / full if self.run_out > 0 else z_full
             ends.append((z_full, z_end))
-        for (x, z), (z_full, z_end) in zip(self.passes, ends):
+        for (x, z), (z_full, z_end) in zip(self.pass_positions, ends):
             cmds.append(Command('G0', {'X': self.r_clear, 'Z': z}))
             cmds.append(Command('G0', {'X': x, 'Z': z}))
             # FreeCAD's path display skips G33, so a zero-length G1 to each G33's end draws the cut;

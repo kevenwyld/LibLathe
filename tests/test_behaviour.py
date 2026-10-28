@@ -220,7 +220,7 @@ class test_ThreadRunOut(unittest.TestCase):
         """Per pass (depth, X at depth, start Z, end of the full-depth stretch, end of the run-out)."""
         cmds = op.get_gcode()
         out, i = [], 0
-        for d, (x, z0) in zip(op.depths, op.passes):
+        for d, (x, z0) in zip(op.depths, op.pass_positions):
             while cmds[i].get_movement() != "G33":
                 i += 1
             straight = cmds[i].get_params()
@@ -233,6 +233,17 @@ class test_ThreadRunOut(unittest.TestCase):
                 i += 2
             out.append((d, x, z0, straight["Z"], end["Z"], end["X"], straight["K"], end["K"]))
         return out
+
+    def test_get_gcode_twice_is_identical(self):
+        """`passes` stays the requested count; the computed positions are pass_positions."""
+        for extra in ({}, {"passes": 6}, {"canned": True}, {"run_out": 1.75}):
+            op = self._op(**extra)
+            requested = op.passes
+            first = [(c.get_movement(), c.get_params()) for c in op.get_gcode()]
+            second = [(c.get_movement(), c.get_params()) for c in op.get_gcode()]
+            self.assertEqual(first, second)
+            self.assertEqual(op.passes, requested)
+            self.assertEqual(len(op.pass_positions), len(op.depths))
 
     def test_run_out_keeps_the_pitch_along_z(self):
         """G33's K is the distance along the move per revolution (LinuxCNC): the sloping run-out's K is
@@ -250,7 +261,7 @@ class test_ThreadRunOut(unittest.TestCase):
         op = self._op(run_out=1.75)
         full, shift = op.thread_depth, math.tan(math.radians(op.infeed_angle))
         rows = self._pass_ends(op)
-        self.assertEqual(len(rows), len(op.passes))
+        self.assertEqual(len(rows), len(op.pass_positions))
         for d, x, z0, z_full, z_end, x_end, *_ in rows:
             self.assertAlmostEqual(z_full, op.z_back + 1.75 + (full - d) * shift)
             self.assertAlmostEqual(x_end, op.thread_radius)
